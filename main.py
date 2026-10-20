@@ -37,7 +37,7 @@ DEFAULT_ACCOUNTS = [
         "api_id": 33248589,
         "api_hash": "cb94a9acfa11e9aaf1195610f4144e65",
         "phone": "+916209065785",
-        "session": "session_916209065785"
+        "session": "1BVtsOLwBu7MlAul6aus_Dqc-NYeZYb5HzuH4U3tv9BLx7niAQUkiEA4FegpUXFkVyJvWHIChOHyDNhyXnBgqUIHhNXUOH1Q8dhUNBZ3B1eUXCg4AJUG0JwYLC0u0r_zDDbeth-vC3AdTdsincSJKSv9PMvYlTgoAyLlCFfSkhUxZ0Ng6tgmdz0hRhfVBDMrJAOn7rzeC6hTwIiVQNMMI10uYk-6fzqDdpLqAbWRlyFd7fYIZhquSTbXsDN0AFHOVSF3mv0Hh8qDw1be4-Y6Wh4e7d0ZemA9I2P1u4Hq8uAM5yUsKL6Tkj3U8Yfg7aki1Rm-5z-eN3KgIyTjkjaxeFl6GlVZIdAU="
     },
     {
         "id": 2,
@@ -45,7 +45,7 @@ DEFAULT_ACCOUNTS = [
         "api_id": 34096655,
         "api_hash": "ed7b99a630dc421b80df31e46f7ae32c",
         "phone": "+917051615832",
-        "session": "session_917051615832"
+        "session": "1BVtsOIwBuzirqArO5vBy70DEEnenKzALvheZ9vqQwkwjW-4lndYHX7L_iCuTrpr7u0lqoWBXbBr4_XDMAsalrydcW0LM1TU21gWzJgRwgkARO__DAlcHIys5JQ5hSyrVQqq8eIY8zPJyFI7k0KMZV3yJo121bFpzgnORMj-YNK7l00g96ih9z-G4PbZpvGgObrtZMGxeu8rQ64kXALuHj4S5e924zV3u9MdtxX2QEQ27D6504oWjnjIVcB1bScNDK5ezHbBttJ9VWP6gERigXILpeBTnPuDYS_c8UCwhOAZFeeSCLYrAFtDOI8Dqrceo-u-NXsgu_76UdJUZ6weJlTKjIUCBA7w="
     },
     {
         "id": 3,
@@ -53,7 +53,7 @@ DEFAULT_ACCOUNTS = [
         "api_id": 33272640,
         "api_hash": "bb1df63726fabb470b0e3f7262511a9b",
         "phone": "+916306499318",
-        "session": "session_916306499318"
+        "session": "1BVtsOJMBu7MahlPiCTe_vUcNebguVTyThz38edRlhVg6GNYYk-UAsceo8WyRkiYtL3KSbQZPyzO2lxl86XzRyn0FlQGjzvG8D4YBxQ8UjmJOT7mwjcCmo1MWD9KLC1Cd0eS0vPV9bwz5T2pbhNxxwlG0bjVaaH5wBFxcmULNMuQOskkhkTFTANtpV5wMHleNE3Fx8L0cbNhI5LUQEj891Ic7yk_ZSkVXuKwTsbHpMfFf-gxQL9GwUuvP9sw-5y6kDB-OiZfw0vvxcq7uNFrEiaAjykUf2vWv2N3MHm-gb-RfctAU7p3Ih8o7uK4P2EbQEPSdIL8aL0COX9NyurtRrEzQBcNmHho="
     },
     {
         "id": 4,
@@ -61,7 +61,7 @@ DEFAULT_ACCOUNTS = [
         "api_id": 39538277,
         "api_hash": "17aa161a9eaafef73a0e7e5aa9a665b5",
         "phone": "+919870857249",
-        "session": "session_919870857249"
+        "session": "1BVtsOJMBu7YbvYAtt5FpVDQz2fZD66idtGM4QguBtZvoVHwxAYF4obF7XDHLjyEnc1zkRkTdkoaWM9_IhIwEjsdUGJ8nP3K89chIOaVoKiiCnFwYAotCrSD-YM_ueDXn6l8guV1Z3nLELmqtRAIOJTMl4VNBhG4Uq7vCPqVQV8Cz2SI8VSPy38LtOkFxJp2_QTpw0t8PxmLvXZkKIdTYAdsGzS1pb1vUSzNt51Ua-kuRWthuYS20Eh6afCZkLpCJQ-mNKIjNWG8EIExRQrpl9z3qBFdTy8uFmBww7O5tbmWYD_hveyiYUvDUQ2Dy1D75yDc6pHx7uBLoodQAC8ge8PIujMHgouc="
     },
     {
         "id": 5,
@@ -69,7 +69,7 @@ DEFAULT_ACCOUNTS = [
         "api_id": 34874968,
         "api_hash": "ef6de5c8b022888bcb58b690aab26eea",
         "phone": "+18459083686",
-        "session": "session_18459083686"
+        "session": "1AZWarzkBuySbzL8SgOStP7OZp7axk4XUXiuX8cO5q1LorJiiButY7K5WOFAA3BOOjM9MdH4i_i7ked1FHnmeOdE-CnsBM4pDP4cBSlqv5yVeLxwU86QHw7otFaxOW0AgrWUwv0bIrxsbwK313A9CBMHIwEW8MPK7MBRMYnWTpTPFpR7q8DUDifOreIiCza2ETBtinv7ViYVWyCWVlRBi2Nxnk5YXMACL6S66nrX4Ulv2QCUBdjq_Z5sXoMtaSjesWJnlFmsxQRypytJmcpJsLki7uEQ3DGfbmrtalRABTH8hJegKmHWICktgJ4OCzLsWjKBTUkBtjHE9nh6D4STbn6vGEMRM6Cw="
     }
 ]
 
