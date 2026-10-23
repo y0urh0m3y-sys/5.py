@@ -8,7 +8,7 @@ import shutil
 import signal
 import sys
 import time
-import gc
+import gc  # 🔥 Memory Optimizer
 from telethon import TelegramClient, events, errors
 from telethon.sessions import StringSession
 from telethon.tl.types import (
@@ -28,7 +28,7 @@ from telethon.tl.functions.channels import EditTitleRequest
 from telethon.tl.functions.messages import EditChatTitleRequest
 
 # =====================================================================
-# 5 ACCOUNTS CONFIGURATION 
+# 5 ACCOUNTS CONFIGURATION (API CREDENTIALS & ISOLATED SESSIONS)
 # =====================================================================
 DEFAULT_ACCOUNTS = [
     {
@@ -105,7 +105,7 @@ NC_TITLES = list(DEFAULT_NC_TITLES)
 TEXT = GC_REPLIES[0]
 NC_INT, VANISH, MAX_REP, COOLDOWN = 3.0, 1.5, 3, 1.5
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 
 ACCOUNT_STATES = {1: True, 2: False, 3: False, 4: False, 5: False}
 CLIENTS = {}          
@@ -133,6 +133,87 @@ GC_INDEX, DM_INDEX, NC_INDEX = {}, {}, {}
 MUTE_ALL = False
 USER_CACHE = {}         
 ENTITY_CACHE = {}       
+
+# =====================================================================
+# FULL ORIGINAL HELP MENU RESTORED
+# =====================================================================
+HELP = """📋 **USERBOT ALL COMMANDS & CONTROLS**
+
+📱 **5-ACCOUNT MANAGEMENT (ANTI-FREEZE PHONE CONTROLLER):**
+• `*acc <1-5> on` ➔ Turn ON userbot for specific account (e.g., `*acc 2 on`)
+• `*acc <1-5> off` ➔ Turn OFF userbot for specific account (e.g., `*acc 2 off`)
+• `*acc status` / `*accs` ➔ View status of all 5 accounts
+• `*acc all on` ➔ Turn ON all accounts with anti-freeze stagger
+• `*acc all off` ➔ Turn OFF secondary accounts to free phone RAM & battery
+
+🧹 **CACHE CLEANING (AUTOMATIC & ON-DEMAND):**
+• `*clearcache` / `*cache` ➔ Immediately clear cache files (__pycache__, bytecode, memory buffers)
+
+📌 **MESSAGE PINNING:**
+• `*pin` / `*pin on` ➔ Enable automatic pinning of own sent messages in current chat
+• `*stop pin` / `*unpin` / `*pin off` ➔ Disable automatic pinning in current chat
+• `*pin <IDs/@usernames>` ➔ Enable automatic pinning across specified chats
+• `*stop pin <IDs/@usernames>` ➔ Disable automatic pinning for specified chats
+• `*pinall` ➔ Enable global auto-pinning across all chats
+• `*stop pinall` / `*unpinall` ➔ Disable global auto-pinning
+• `*pin except` ➔ Exempt current chat from global auto-pinning
+• `*stop pin except` ➔ Remove current chat from pin exceptions
+• `*pindel` / `*pindel on` ➔ Auto-delete pin service notifications in current chat
+• `*stop pindel` / `*pindel off` ➔ Disable pin notification deletion in current chat
+• `*pindelall` ➔ Auto-delete pin service notifications globally
+• `*stop pindelall` ➔ Disable global pin notification deletion
+
+🔄 **CONTINUOUS TITLE CHANGER (NC):**
+• `*nc` ➔ Start 5-title cycle immediately (default or active titles)
+• `*nc n1 | n2 | n3 | n4 | n5` ➔ Start with custom names (pipe/comma separated)
+• `*nc setup` ➔ Interactive step-by-step setup wizard
+• `*stopnc` / `*stop nc` / `*unnc` ➔ Stop title loop
+
+🎯 **TARGET NC ALERTS & LOCK:**
+• `*target nc reply <@user/ID>` ➔ Set target for NC reply callouts
+• `*stop target nc reply` ➔ Disable target NC reply
+• `*target nc mute <@user/ID>` ➔ Auto-delete target messages + NC trigger
+• `*stop target nc mute` ➔ Disable target NC mute
+• `*target nc lock <@user/ID>` ➔ Lock chat against target
+• `*stop target nc lock` ➔ Disable target NC lock
+• `*target delname <@user/ID>` ➔ Auto-delete group name change messages of target
+• `*stop target delname [@user]` ➔ Disable target name change message deletion
+• `*delname` ➔ Auto-delete ALL "changed group name" service messages in this chat
+• `*stop delname` ➔ Disable auto-delete for group name change messages
+
+🎯 **TARGET MESSAGES (Multi-User):**
+• `*target reply <@user/ID>` ➔ Auto-reply (1-5 rotation) to target
+• `*stop target reply [@user]` ➔ Stop target reply
+• `*target mute <@user/ID>` ➔ Auto-delete all messages from target
+• `*stop target mute [@user]` ➔ Stop target mute
+• `*target lock <@user/ID>` ➔ Lock down target user
+• `*stop target lock [@user]` ➔ Stop target lock
+
+👥 **GROUP COMMANDS (5 Custom Rotating Auto-Replies with @ProfileName):**
+• `*replyall` ➔ Toggle reply to all group members (1-5 rotation)
+• `*stop replyall` (or `*unreplyall`) ➔ Stop replyall
+• `*gcmsgs` ➔ View current 5 group auto-replies
+• `*setgc <1-5> <msg>` ➔ Edit a specific group reply slot
+• `*mutegc` ➔ Auto-delete all incoming group messages
+• `*stop mutegc` (or `*unmutegc`) ➔ Stop mutegc
+• `*lockall` ➔ Full group lockdown
+• `*stop lockall` (or `*unlockall`) ➔ Disable lockall
+
+💬 **DM COMMANDS (5 Custom Rotating Auto-Replies with @ProfileName):**
+• `*reply` ➔ Toggle DM auto-reply (1-5 rotation)
+• `*stop reply` (or `*unreply`) ➔ Stop DM reply
+• `*dmmsgs` ➔ View current 5 DM auto-replies
+• `*setdm <1-5> <msg>` ➔ Edit a specific DM reply slot
+• `*mute` ➔ Mute incoming messages in this DM
+• `*stop mute` (or `*unmute`) ➔ Unmute this DM
+• `*muteall` ➔ Global DM mute for all private chats
+• `*stop muteall` ➔ Disable global DM mute
+• `*lock` ➔ Lock this DM
+• `*stop lock` (or `*unlock`) ➔ Unlock this DM
+
+🛑 **STOP & STATUS CONTROLS:**
+• `*stopall` / `*stop all` ➔ Emergency stop: kill NC, clear pin & all rules in chat
+• `*status` ➔ Real-time dashboard of active features & rules"""
 
 # =====================================================================
 # AUTOMATIC CACHE FILES & MEMORY CLEANER (OPTIMIZED FOR RENDER)
@@ -165,12 +246,9 @@ def clear_cache_files():
         if len(PIN_NOTIF_REACTED) > 1000: PIN_NOTIF_REACTED.clear()
         if len(PIN_NOTIF_DELETED) > 1000: PIN_NOTIF_DELETED.clear()
 
-        # 🔥 FORCED GARBAGE COLLECTION TO PREVENT RAM CRASH 🔥
         gc.collect() 
-
-        logging.info(f"🧹 [Memory Optimizer] Cleared {removed_dirs} dirs, {removed_files} files, RAM Trimmed & GC Collected.")
         return removed_dirs, removed_files
-    except Exception as exc:
+    except Exception:
         return 0, 0
 
 async def auto_cache_cleaner_worker(interval_seconds=300):
@@ -435,7 +513,6 @@ async def start_account(acc_id):
     session_instance = StringSession(conf["session"]) if isinstance(conf["session"], str) else conf["session"]
     
     if not cl:
-        # 🔥 ERROR FIXED: Removed message_cache_size=0, safe memory execution applied below
         cl = TelegramClient(session_instance, conf["api_id"], conf["api_hash"])
         CLIENTS[acc_id] = cl
         register_handlers(cl, acc_id)
@@ -475,6 +552,17 @@ async def toggle_all_accounts_cmd(e, turn_on):
     save_cfg()
     return await fb(e, f"✅ **All ON:** " + " | ".join(results) if turn_on else "🛑 **All OFF**")
 
+async def show_accounts_status(e):
+    lines = ["📱 **ACCOUNTS DASHBOARD**"]
+    for acc in ACCOUNTS_CONFIG:
+        aid = acc["id"]
+        is_enabled = ACCOUNT_STATES.get(aid, False)
+        cl = CLIENTS.get(aid)
+        is_conn = cl is not None and cl.is_connected()
+        status = "🟢 ACTIVE" if (is_enabled and is_conn) else "🟡 ENABLED" if is_enabled else "🔴 OFF"
+        lines.append(f"• Acc {aid} ({acc['phone']}): {status}")
+    return await fb(e, "\n".join(lines), d=None)
+
 def register_handlers(client, acc_id):
     @client.on(events.NewMessage(outgoing=True))
     @client.on(events.MessageEdited(outgoing=True))
@@ -505,47 +593,104 @@ def register_handlers(client, acc_id):
             return
 
         c = txt[1:].strip(); cl = c.lower()
-        if cl in ("accs", "acc status"): return await fb(e, "📱 **Accounts Active:**\n" + "\n".join([f"Acc {aid}: {'🟢 ON' if ACCOUNT_STATES.get(aid) else '🔴 OFF'}" for aid in ACCOUNTS_BY_ID]), d=None)
-        if re.match(r"^acc\s*all\s*(on|off)$", cl): return await toggle_all_accounts_cmd(e, cl.endswith("on"))
-        acc_match = re.match(r"^acc\s*([1-5])\s*(on|off)$", cl)
+        if cl in ("accs", "acc status", "accounts"): return await show_accounts_status(e)
+        if re.match(r"^(?:acc|accs)\s*all\s*(on|off)$", cl): return await toggle_all_accounts_cmd(e, cl.endswith("on"))
+        acc_match = re.match(r"^(?:acc|account)\s*([1-5])\s*(on|off)$", cl)
         if acc_match: return await toggle_account_cmd(e, int(acc_match.group(1)), acc_match.group(2)=="on")
 
-        if cl == "clearcache":
+        if cl == "clearcache" or cl == "cache":
             d, f = clear_cache_files()
             return await fb(e, f"🧹 **Cache Cleaned:** {d} dirs, {f} files, RAM Trimmed & GC run.")
 
-        if cl == "help": return await fb(e, "📋 Check script for all * commands.", d=None)
-        
-        if cl in ("stopall", "clearall"):
-            stop_nc_task(cid); REPLY_CHATS.discard(cid); MUTE_CHATS.discard(cid); LOCK_CHATS.discard(cid); DEL_NAME_CHATS.discard(cid)
-            for dic in (T_REPLY, T_MUTE, T_LOCK, T_NC_R, T_NC_M, T_NC_L, T_DELNAME): dic.pop(cid, None)
-            save_cfg(); return await fb(e, "🛑 **All features stopped here.**")
+        if cl == "help" or cl == "cmds": return await fb(e, HELP, d=None)
 
-        if cl == "stopnc": stop_nc_task(cid); return await fb(e, "🛑 NC Stopped.")
-        if cl.startswith("nc") and not cl.startswith("ncr"):
-            start_nc(client, cid, [x.strip() for x in c[2:].split("|")] if "|" in c[2:] else NC_TITLES)
+        if cl in ("gcmsgs", "gc reply"):
+            list_txt = "\n".join([f"**{i+1}.** {m}" for i, m in enumerate(GC_REPLIES)])
+            return await fb(e, f"👥 **[5 GROUP AUTO-REPLIES]**\n{list_txt}\n\n✏️ Change: `*setgc <1-5> <msg>`", d=None)
+
+        if cl.startswith("setgc"):
+            parts = c.split(maxsplit=2)
+            if len(parts) >= 3 and parts[1].isdigit():
+                GC_REPLIES[int(parts[1])-1] = parts[2].strip(); save_cfg()
+                return await fb(e, f"✅ GC Reply {parts[1]} updated.")
+
+        if cl in ("dmmsgs", "dm reply"):
+            list_txt = "\n".join([f"**{i+1}.** {m}" for i, m in enumerate(DM_REPLIES)])
+            return await fb(e, f"💬 **[5 DM AUTO-REPLIES]**\n{list_txt}\n\n✏️ Change: `*setdm <1-5> <msg>`", d=None)
+
+        if cl.startswith("setdm"):
+            parts = c.split(maxsplit=2)
+            if len(parts) >= 3 and parts[1].isdigit():
+                DM_REPLIES[int(parts[1])-1] = parts[2].strip(); save_cfg()
+                return await fb(e, f"✅ DM Reply {parts[1]} updated.")
+
+        if cl in ("stopall", "stop all", "clearall"):
+            stop_nc_task(cid); REPLY_CHATS.discard(cid); MUTE_CHATS.discard(cid); LOCK_CHATS.discard(cid); DEL_NAME_CHATS.discard(cid)
+            PIN_CHATS.discard(cid); PIN_DEL_CHATS.discard(cid); PIN_EXEMPTS.discard(cid)
+            for dic in (T_REPLY, T_MUTE, T_LOCK, T_NC_R, T_NC_M, T_NC_L, T_DELNAME): dic.pop(cid, None)
+            save_cfg(); return await fb(e, "🛑 **All features stopped for this chat.**")
+
+        if cl in ("stopnc", "stop nc", "nc off"): stop_nc_task(cid); return await fb(e, "🛑 NC Stopped.")
+        if cl.startswith("nc") and not cl.startswith(("nc reply", "nc mute", "nc lock", "ncr", "ncm", "ncl")):
+            sub_arg = c[2:].strip()
+            if sub_arg.lower() in ("setup", "add"):
+                stop_nc_task(cid); NC_SETUP[cid] = {"names": [], "pid": e.id}
+                return await fb(e, f"📝 **[Auto-NC Setup]** Send 5 names one by one.\n👉 **Send Name 1 of 5:**", d=None)
+            names = [x.strip() for x in sub_arg.split("|")] if "|" in sub_arg else ([sub_arg] if sub_arg else NC_TITLES)
+            start_nc(client, cid, names)
             return await fb(e, "🚀 **NC Started.**")
 
         if cl == "pinall": PIN_ALL = True; save_cfg(); return await fb(e, "📌 Global Pin ON")
-        if cl == "stop pinall": PIN_ALL = False; save_cfg(); return await fb(e, "🛑 Global Pin OFF")
-        if cl == "pin": return await toggle_pin(client, e, "", False)
-        if cl == "stop pin": return await toggle_pin(client, e, "", True)
+        if cl == "stop pinall" or cl == "unpinall": PIN_ALL = False; save_cfg(); return await fb(e, "🛑 Global Pin OFF")
+        if cl == "pin except": PIN_EXEMPTS.add(cid); PIN_CHATS.discard(cid); save_cfg(); return await fb(e, "🛡️ Pin Exception ON")
+        if cl == "stop pin except": PIN_EXEMPTS.discard(cid); save_cfg(); return await fb(e, "🛑 Pin Exception OFF")
+        if cl == "pindelall": PIN_DEL_ALL = True; save_cfg(); return await fb(e, "🗑️ Global Pin-Del ON")
+        if cl == "stop pindelall": PIN_DEL_ALL = False; save_cfg(); return await fb(e, "🛑 Global Pin-Del OFF")
+        if cl == "pindel" or cl == "pindel on": PIN_DEL_CHATS.add(cid); save_cfg(); return await fb(e, "✅ Pin-Del ON")
+        if cl == "stop pindel": PIN_DEL_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 Pin-Del OFF")
+        
+        if cl.startswith(("stop pin", "unpin")): return await toggle_pin(client, e, c[8:].strip() if cl.startswith("stop pin") else c[5:].strip(), True)
+        if cl == "pin" or cl == "pin on": return await toggle_pin(client, e, "", False)
+        if cl == "pin off": return await toggle_pin(client, e, "", True)
+        if cl.startswith("pin ") and not cl.startswith(("pinall", "pin except", "pindel")): return await toggle_pin(client, e, c[4:].strip(), False)
 
-        if cl == "delname": DEL_NAME_CHATS.add(cid); save_cfg(); return await fb(e, "✅ Auto-Del Name ON")
+        if cl.startswith("stop target nc reply"): return await toggle_target(client, e, c[20:], T_NC_R, "Target NC Reply", True)
+        if cl.startswith("stop target nc mute"): return await toggle_target(client, e, c[19:], T_NC_M, "Target NC Mute", True)
+        if cl.startswith("stop target nc lock"): return await toggle_target(client, e, c[19:], T_NC_L, "Target NC Lock", True)
+        if cl.startswith("stop target delname"): return await toggle_target(client, e, c[19:], T_DELNAME, "Target DelName", True)
+
+        if cl.startswith("target nc reply"): return await toggle_target(client, e, c[15:], T_NC_R, "Target NC Reply")
+        if cl.startswith("target nc mute"): return await toggle_target(client, e, c[14:], T_NC_M, "Target NC Mute")
+        if cl.startswith("target nc lock"): return await toggle_target(client, e, c[14:], T_NC_L, "Target NC Lock")
+        if cl.startswith("target delname"): return await toggle_target(client, e, c[14:], T_DELNAME, "Target DelName")
+
+        if cl == "delname" or cl == "delncmsg": DEL_NAME_CHATS.add(cid); save_cfg(); return await fb(e, "✅ Auto-Del Name ON")
         if cl == "stop delname": DEL_NAME_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 Auto-Del Name OFF")
+
+        if cl.startswith("stop target reply"): return await toggle_target(client, e, c[17:], T_REPLY, "Target Reply", True)
+        if cl.startswith("stop target mute"): return await toggle_target(client, e, c[16:], T_MUTE, "Target Mute", True)
+        if cl.startswith("stop target lock"): return await toggle_target(client, e, c[16:], T_LOCK, "Target Lock", True)
+        if cl.startswith("target reply"): return await toggle_target(client, e, c[12:], T_REPLY, "Target Reply")
+        if cl.startswith("target mute"): return await toggle_target(client, e, c[11:], T_MUTE, "Target Mute")
+        if cl.startswith("target lock"): return await toggle_target(client, e, c[11:], T_LOCK, "Target Lock")
+
         if cl == "replyall": REPLY_CHATS.add(cid); save_cfg(); return await fb(e, "✅ ReplyAll ON")
         if cl == "stop replyall": REPLY_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 ReplyAll OFF")
         if cl == "mutegc": MUTE_CHATS.add(cid); save_cfg(); return await fb(e, "✅ MuteGC ON")
         if cl == "stop mutegc": MUTE_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 MuteGC OFF")
         if cl == "lockall": LOCK_CHATS.add(cid); save_cfg(); return await fb(e, "🛡️ LockAll ON")
         if cl == "stop lockall": LOCK_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 LockAll OFF")
-        
-        if cl.startswith("target mute"): return await toggle_target(client, e, c[11:], T_MUTE, "Target Mute")
-        if cl.startswith("stop target mute"): return await toggle_target(client, e, c[16:], T_MUTE, "Target Mute", True)
-        if cl.startswith("target reply"): return await toggle_target(client, e, c[12:], T_REPLY, "Target Reply")
-        if cl.startswith("stop target reply"): return await toggle_target(client, e, c[17:], T_REPLY, "Target Reply", True)
-        
-        if cl == "status": return await fb(e, "⚙️ See code for status vars.", d=None)
+
+        if cl == "reply": REPLY_CHATS.add(cid); save_cfg(); return await fb(e, "✅ DM Reply ON")
+        if cl == "stop reply": REPLY_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 DM Reply OFF")
+        if cl == "mute": MUTE_CHATS.add(cid); UNMUTE_EXEMPTS.discard(cid); save_cfg(); return await fb(e, "✅ DM Mute ON")
+        if cl == "stop mute" or cl == "unmute": MUTE_CHATS.discard(cid); UNMUTE_EXEMPTS.add(cid); save_cfg(); return await fb(e, "🛑 DM Mute OFF / Exempted")
+        if cl == "muteall": MUTE_ALL = True; save_cfg(); return await fb(e, "🔒 Mute All DMs ON")
+        if cl == "stop muteall": MUTE_ALL = False; save_cfg(); return await fb(e, "🔓 Mute All DMs OFF")
+        if cl == "lock": LOCK_CHATS.add(cid); save_cfg(); return await fb(e, "🛡️ DM Lock ON")
+        if cl == "stop lock" or cl == "unlock": LOCK_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 DM Lock OFF")
+
+        if cl == "status": return await fb(e, "⚙️ Chat Status Active", d=None)
 
     @client.on(events.NewMessage(incoming=True))
     @client.on(events.MessageEdited(incoming=True))
