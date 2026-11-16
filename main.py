@@ -69,7 +69,7 @@ DEFAULT_ACCOUNTS = [
         "api_id": 34874968,
         "api_hash": "ef6de5c8b022888bcb58b690aab26eea",
         "phone": "+18459083686",
-        "session": "1AZWarzkBuySbzL8SgOStP7OZp7axk4XUXiuX8cO5q1LorJiiButY7K5WOFAA3BOOjM9MdH4i_i7ked1FHnmeOdE-CnsBM4pDP4cBSlqv5yVeLxwU86QHw7otFaxOW0AgrWUwv0bIrxsbwK313A9CBMHIwEW8MPK7MBRMYnWTpTPFpR7q8DUDifOreIiCza2ETBtinv7ViYVWyCWVlRBi2Nxnk5YXMACL6S66nrX4Ulv2QCUBdjq_Z5sXoMtaSjesWJnlFmsxQRypytJmcpJsLki7uEQ3DGfbmrtalRABTH8hJegKmHWICktgJ4OCzLsWjKBTUkBtjHE9nh6D4STbn6vGEMRM6Cw="
+        "session": "1AZWarzQBuwM-b_t9xlyw69wdDtal6O6Da9gvyaq5OhpogLYy2LpqyOM9Cw5VXBLdrCWIXp6hx7nQPdu7eS1cW7_zfp8v2vsFIDRir_GfdBjcaHgIQappuHw-rS1VcATN14HBF_QdnySO8FL8gWOHTj3hhpkZaDKWVrDTiNGLIsbqK5Ii0a9VtoZMjGnDf8-RAOTqxByJ_kRXwlnji_BABm9pEmtVgmwfmV2XcmvRrssMQWUk9OrpnvdgtWneIOVGv3jZ2M5DUh6HCyPIXNiZz-kvYZ05RdeaNZNrqNARkm9a7gBfXCS6VWrcDMUUJCLWaWJzRF2bvM7isFJPtbZXj-JVF5chwjo="
     }
 ]
 
