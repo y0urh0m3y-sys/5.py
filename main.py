@@ -1,14 +1,12 @@
 import asyncio
-import glob
 import json
 import logging
 import os
 import re
 import shutil
 import signal
-import sys
 import time
-import gc  # 🔥 Memory Optimizer
+import gc  # Memory Optimizer
 from telethon import TelegramClient, events, errors
 from telethon.sessions import StringSession
 from telethon.tl.types import (
@@ -16,13 +14,6 @@ from telethon.tl.types import (
     MessageMediaEmpty,
     MessageMediaUnsupported,
     Channel,
-    Chat,
-    User,
-    PeerChannel,
-    PeerChat,
-    PeerUser,
-    MessageActionChatEditTitle,
-    MessageActionPinMessage
 )
 from telethon.tl.functions.channels import EditTitleRequest
 from telethon.tl.functions.messages import EditChatTitleRequest
@@ -93,130 +84,134 @@ for d_acc in DEFAULT_ACCOUNTS:
 
 ACCOUNTS_BY_ID = {acc["id"]: acc for acc in ACCOUNTS_CONFIG}
 FILE = "settings.json"
+BACKUP_TAG = "#USERBOT_CFG_BACKUP_V2"
 
 PIN_REACTION = "🔥"
 DEFAULT_NC_TITLES = ["🔥 ALPHA ZONE 🔥", "⚡ THUNDER REIGN ⚡", "👑 APEX EMPIRE 👑", "💎 NITRO KINGS 💎", "🚀 SUPREME RULE 🚀"]
 DEFAULT_GC_REPLIES = ["Hello! Currently away, will reply shortly ⚡", "Active in group, message acknowledged 👍", "Busy at the moment, checking notifications later 🚀", "Auto-reply active. Stay tuned! 💬", "Ping received. I will review this soon 🔥"]
 DEFAULT_DM_REPLIES = ["Hey! Currently away from DM, will respond soon ⚡", "Message received in private chat 👍", "Please hold on, reviewing DMs shortly 🚀", "Auto-responder active for direct messages 💬", "Thanks for reaching out! Will get back to you soon 🔥"]
 
-GC_REPLIES = list(DEFAULT_GC_REPLIES)
-DM_REPLIES = list(DEFAULT_DM_REPLIES)
-NC_TITLES = list(DEFAULT_NC_TITLES)
-TEXT = GC_REPLIES[0]
 NC_INT, VANISH, MAX_REP, COOLDOWN = 3.0, 1.5, 3, 1.5
 
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s [%(levelname)s] %(message)s")
 
 ACCOUNT_STATES = {1: True, 2: False, 3: False, 4: False, 5: False}
-CLIENTS = {}          
-MY_IDS = {}           
-USER_INFOS = {}       
+CLIENTS = {}
+MY_IDS = {}
+USER_INFOS = {}
 STOP_EVENT = None
 RENDER_SERVER = None
 CACHE_CLEAN_TASK = None
-
-REPLY_CHATS, MUTE_CHATS, LOCK_CHATS, UNMUTE_EXEMPTS = set(), set(), set(), set()
-DEL_NAME_CHATS = set()  
-PIN_CHATS, PIN_EXEMPTS = set(), set()
-PIN_DEL_CHATS = set()
-PIN_ALL = False
-PIN_DEL_ALL = False
-PIN_PROCESSED = set()
-PIN_NOTIF_REACTED = set()
-PIN_NOTIF_DELETED = set()
-RECENT_DELETED = set()  
-
-T_REPLY, T_MUTE, T_LOCK, T_NC_R, T_NC_M, T_NC_L = {}, {}, {}, {}, {}, {}
-T_DELNAME = {}          
-CACHE, LAST_REP, REP_CNT, NC_TASKS, NC_SETUP = {}, {}, {}, {}, {}
-GC_INDEX, DM_INDEX, NC_INDEX = {}, {}, {}
-MUTE_ALL = False
-USER_CACHE = {}         
-ENTITY_CACHE = {}       
+CLOUD_SYNC_TASK = None
+BACKUP_MSG_ID = None
 
 # =====================================================================
-# FULL ORIGINAL HELP MENU RESTORED
+# STRICT PER-ACCOUNT ISOLATED STATE STORE (NO CROSS-ACCOUNT LEAKAGE)
+# =====================================================================
+def create_empty_acc_state():
+    return {
+        "reply_chats": set(),
+        "mute_chats": set(),
+        "lock_chats": set(),
+        "unmute_exempts": set(),
+        "del_name_chats": set(),
+        "pin_chats": set(),
+        "pin_exempts": set(),
+        "pin_del_chats": set(),
+        "pin_all": False,
+        "pin_del_all": False,
+        "mute_all": False,
+        "pin_reaction": PIN_REACTION,
+        "gc_replies": list(DEFAULT_GC_REPLIES),
+        "dm_replies": list(DEFAULT_DM_REPLIES),
+        "nc_titles": list(DEFAULT_NC_TITLES),
+        "t_reply": {},
+        "t_mute": {},
+        "t_lock": {},
+        "t_nc_r": {},
+        "t_nc_m": {},
+        "t_nc_l": {},
+        "t_delname": {},
+        # Runtime ephemeral caches per account
+        "nc_tasks": {},
+        "nc_setup": {},
+        "gc_index": {},
+        "dm_index": {},
+        "last_rep": {},
+        "pin_processed": set(),
+        "pin_notif_reacted": set(),
+        "pin_notif_deleted": set(),
+        "recent_deleted": set(),
+        "user_cache": {},
+        "entity_cache": {},
+        "dialog_cache": {"ts": 0, "items": []},
+    }
+
+ACC_DATA = {acc["id"]: create_empty_acc_state() for acc in ACCOUNTS_CONFIG}
+
+def get_st(acc_id):
+    if acc_id not in ACC_DATA:
+        ACC_DATA[acc_id] = create_empty_acc_state()
+    return ACC_DATA[acc_id]
+
+# =====================================================================
+# HELP MENU
 # =====================================================================
 HELP = """📋 **USERBOT ALL COMMANDS & CONTROLS**
+*(Har account ki settings 100% alag hain — jis account se command doge sirf wahi chalega!)*
+*(Prefix `*` ya `/` dono kaam karte hain. Kisi bhi chat se `@gc_name` ya `"GC Name"` likhkar remote control karein!)*
 
-📱 **5-ACCOUNT MANAGEMENT (ANTI-FREEZE PHONE CONTROLLER):**
-• `*acc <1-5> on` ➔ Turn ON userbot for specific account (e.g., `*acc 2 on`)
-• `*acc <1-5> off` ➔ Turn OFF userbot for specific account (e.g., `*acc 2 off`)
-• `*acc status` / `*accs` ➔ View status of all 5 accounts
-• `*acc all on` ➔ Turn ON all accounts with anti-freeze stagger
-• `*acc all off` ➔ Turn OFF secondary accounts to free phone RAM & battery
+📱 **5-ACCOUNT MANAGEMENT:**
+- `*acc <1-5> on` / `off` ➔ Turn ON/OFF specific account
+- `*acc status` / `*accs` ➔ View status of all 5 accounts
+- `*acc all on` / `off` ➔ Turn ON/OFF all accounts
 
-🧹 **CACHE CLEANING (AUTOMATIC & ON-DEMAND):**
-• `*clearcache` / `*cache` ➔ Immediately clear cache files (__pycache__, bytecode, memory buffers)
+🧹 **CACHE & CLOUD BACKUP:**
+- `*clearcache` / `*cache` ➔ Immediately trim RAM & clear cache
+- `*sync` ➔ Force save all 5 accounts' settings to Saved Messages
 
 📌 **MESSAGE PINNING:**
-• `*pin` / `*pin on` ➔ Enable automatic pinning of own sent messages in current chat
-• `*stop pin` / `*unpin` / `*pin off` ➔ Disable automatic pinning in current chat
-• `*pin <IDs/@usernames>` ➔ Enable automatic pinning across specified chats
-• `*stop pin <IDs/@usernames>` ➔ Disable automatic pinning for specified chats
-• `*pinall` ➔ Enable global auto-pinning across all chats
-• `*stop pinall` / `*unpinall` ➔ Disable global auto-pinning
-• `*pin except` ➔ Exempt current chat from global auto-pinning
-• `*stop pin except` ➔ Remove current chat from pin exceptions
-• `*pindel` / `*pindel on` ➔ Auto-delete pin service notifications in current chat
-• `*stop pindel` / `*pindel off` ➔ Disable pin notification deletion in current chat
-• `*pindelall` ➔ Auto-delete pin service notifications globally
-• `*stop pindelall` ➔ Disable global pin notification deletion
+- `*pin [@gc]` / `*stop pin [@gc]` ➔ Toggle auto-pin in current or target GC
+- `*pinall` / `*stop pinall` ➔ Global auto-pinning (for this account)
+- `*pin except [@gc]` / `*stop pin except [@gc]` ➔ Exempt chat from global pin
+- `*pindel [@gc]` / `*stop pindel [@gc]` ➔ Auto-delete pin notifications
+- `*pindelall` / `*stop pindelall` ➔ Global pin notification deletion
 
 🔄 **CONTINUOUS TITLE CHANGER (NC):**
-• `*nc` ➔ Start 5-title cycle immediately (default or active titles)
-• `*nc n1 | n2 | n3 | n4 | n5` ➔ Start with custom names (pipe/comma separated)
-• `*nc setup` ➔ Interactive step-by-step setup wizard
-• `*stopnc` / `*stop nc` / `*unnc` ➔ Stop title loop
+- `*nc [@gc]` ➔ Start 5-title cycle in current or target GC
+- `*nc n1 | n2 | n3 | n4 | n5 [@gc]` ➔ Start custom names
+- `*nc setup` ➔ Interactive step-by-step setup wizard
+- `*stopnc [@gc]` / `*stop nc [@gc]` ➔ Stop title loop
 
-🎯 **TARGET NC ALERTS & LOCK:**
-• `*target nc reply <@user/ID>` ➔ Set target for NC reply callouts
-• `*stop target nc reply` ➔ Disable target NC reply
-• `*target nc mute <@user/ID>` ➔ Auto-delete target messages + NC trigger
-• `*stop target nc mute` ➔ Disable target NC mute
-• `*target nc lock <@user/ID>` ➔ Lock chat against target
-• `*stop target nc lock` ➔ Disable target NC lock
-• `*target delname <@user/ID>` ➔ Auto-delete group name change messages of target
-• `*stop target delname [@user]` ➔ Disable target name change message deletion
-• `*delname` ➔ Auto-delete ALL "changed group name" service messages in this chat
-• `*stop delname` ➔ Disable auto-delete for group name change messages
+🎯 **TARGET COMMANDS (`*target <mode> <@user/ID/Name> [@gc]`):**
+- `*target nc reply <user> [@gc]` / `*stop target nc reply [user] [@gc]`
+- `*target nc mute <user> [@gc]` / `*stop target nc mute [user] [@gc]`
+- `*target nc lock <user> [@gc]` / `*stop target nc lock [user] [@gc]`
+- `*target delname <user> [@gc]` / `*stop target delname [user] [@gc]`
+- `*target reply <user> [@gc]` / `*stop target reply [user] [@gc]`
+- `*target mute <user> [@gc]` / `*stop target mute [user] [@gc]`
+- `*target lock <user> [@gc]` / `*stop target lock [user] [@gc]`
+- `*delname [@gc]` / `*stop delname [@gc]` ➔ Auto-delete ALL group name changes
 
-🎯 **TARGET MESSAGES (Multi-User):**
-• `*target reply <@user/ID>` ➔ Auto-reply (1-5 rotation) to target
-• `*stop target reply [@user]` ➔ Stop target reply
-• `*target mute <@user/ID>` ➔ Auto-delete all messages from target
-• `*stop target mute [@user]` ➔ Stop target mute
-• `*target lock <@user/ID>` ➔ Lock down target user
-• `*stop target lock [@user]` ➔ Stop target lock
+👥 **GROUP COMMANDS (Remote `@gc` Supported):**
+- `*replyall [@gc]` / `*stop replyall [@gc]` ➔ 1-5 rotating reply to all members
+- `*gcmsgs` / `*setgc <1-5> <msg>` ➔ View/edit 5 group auto-replies
+- `*mutegc [@gc]` / `*stop mutegc [@gc]` ➔ Auto-delete all incoming GC messages
+- `*lockall [@gc]` / `*stop lockall [@gc]` ➔ Full group lockdown
 
-👥 **GROUP COMMANDS (5 Custom Rotating Auto-Replies with @ProfileName):**
-• `*replyall` ➔ Toggle reply to all group members (1-5 rotation)
-• `*stop replyall` (or `*unreplyall`) ➔ Stop replyall
-• `*gcmsgs` ➔ View current 5 group auto-replies
-• `*setgc <1-5> <msg>` ➔ Edit a specific group reply slot
-• `*mutegc` ➔ Auto-delete all incoming group messages
-• `*stop mutegc` (or `*unmutegc`) ➔ Stop mutegc
-• `*lockall` ➔ Full group lockdown
-• `*stop lockall` (or `*unlockall`) ➔ Disable lockall
+💬 **DM COMMANDS:**
+- `*reply [@user]` / `*stop reply [@user]` ➔ Toggle DM auto-reply
+- `*dmmsgs` / `*setdm <1-5> <msg>` ➔ View/edit 5 DM auto-replies
+- `*mute [@user]` / `*stop mute [@user]` ➔ Mute DM
+- `*muteall` / `*stop muteall` ➔ Global DM mute
+- `*lock [@user]` / `*stop lock [@user]` ➔ Lock DM
 
-💬 **DM COMMANDS (5 Custom Rotating Auto-Replies with @ProfileName):**
-• `*reply` ➔ Toggle DM auto-reply (1-5 rotation)
-• `*stop reply` (or `*unreply`) ➔ Stop DM reply
-• `*dmmsgs` ➔ View current 5 DM auto-replies
-• `*setdm <1-5> <msg>` ➔ Edit a specific DM reply slot
-• `*mute` ➔ Mute incoming messages in this DM
-• `*stop mute` (or `*unmute`) ➔ Unmute this DM
-• `*muteall` ➔ Global DM mute for all private chats
-• `*stop muteall` ➔ Disable global DM mute
-• `*lock` ➔ Lock this DM
-• `*stop lock` (or `*unlock`) ➔ Unlock this DM
-
-🛑 **STOP & STATUS CONTROLS:**
-• `*stopall` / `*stop all` ➔ Emergency stop: kill NC, clear pin & all rules in chat
-• `*status` ➔ Real-time dashboard of active features & rules"""
+🛑 **STOP & STATUS:**
+- `*stopall [@gc]` ➔ Stop all features in current or target chat (this account)
+- `*status [@gc]` ➔ Real-time active status (this account)"""
 
 # =====================================================================
-# AUTOMATIC CACHE FILES & MEMORY CLEANER (OPTIMIZED FOR RENDER)
+# STRICT RAM & CACHE CLEANER (PREVENTS 512MB RENDER OOM)
 # =====================================================================
 def clear_cache_files():
     removed_dirs, removed_files = 0, 0
@@ -224,34 +219,47 @@ def clear_cache_files():
     try:
         for root, dirs, files in os.walk(current_dir, topdown=False):
             for d in dirs:
-                if d == "__pycache__" or d == ".pytest_cache":
+                if d in ("__pycache__", ".pytest_cache"):
                     try:
                         shutil.rmtree(os.path.join(root, d), ignore_errors=True)
                         removed_dirs += 1
-                    except: pass
+                    except Exception:
+                        pass
             for f in files:
                 if f.endswith((".pyc", ".pyo", ".pyd", ".tmp")):
                     try:
                         os.remove(os.path.join(root, f))
                         removed_files += 1
-                    except: pass
+                    except Exception:
+                        pass
 
-        global CACHE, USER_CACHE, ENTITY_CACHE, RECENT_DELETED, PIN_PROCESSED, PIN_NOTIF_REACTED, PIN_NOTIF_DELETED
-        
-        if len(CACHE) > 300: CACHE = dict(list(CACHE.items())[-150:])
-        if len(USER_CACHE) > 500: USER_CACHE.clear()
-        if len(ENTITY_CACHE) > 200: ENTITY_CACHE.clear()
-        if len(RECENT_DELETED) > 1000: RECENT_DELETED.clear()
-        if len(PIN_PROCESSED) > 1000: PIN_PROCESSED.clear()
-        if len(PIN_NOTIF_REACTED) > 1000: PIN_NOTIF_REACTED.clear()
-        if len(PIN_NOTIF_DELETED) > 1000: PIN_NOTIF_DELETED.clear()
+        now = time.time()
+        for st in ACC_DATA.values():
+            if len(st["user_cache"]) > 150:
+                st["user_cache"].clear()
+            if len(st["entity_cache"]) > 100:
+                st["entity_cache"].clear()
+            if len(st["recent_deleted"]) > 250:
+                st["recent_deleted"].clear()
+            if len(st["pin_processed"]) > 250:
+                st["pin_processed"].clear()
+            if len(st["pin_notif_reacted"]) > 250:
+                st["pin_notif_reacted"].clear()
+            if len(st["pin_notif_deleted"]) > 250:
+                st["pin_notif_deleted"].clear()
+            if len(st["last_rep"]) > 200:
+                st["last_rep"] = {k: v for k, v in st["last_rep"].items() if now - v < 60}
+            if len(st["gc_index"]) > 150:
+                st["gc_index"].clear()
+            if len(st["dm_index"]) > 150:
+                st["dm_index"].clear()
 
-        gc.collect() 
+        gc.collect()
         return removed_dirs, removed_files
     except Exception:
         return 0, 0
 
-async def auto_cache_cleaner_worker(interval_seconds=300):
+async def auto_cache_cleaner_worker(interval_seconds=180):
     try:
         while True:
             await asyncio.sleep(interval_seconds)
@@ -259,104 +267,294 @@ async def auto_cache_cleaner_worker(interval_seconds=300):
     except asyncio.CancelledError:
         pass
 
-def is_target_user(cid, uid):
-    if not uid: return False
-    if cid in T_DELNAME and uid in T_DELNAME[cid]: return True
-    if cid in T_NC_L and uid in T_NC_L[cid]: return True
-    if cid in T_NC_M and uid in T_NC_M[cid]: return True
-    if cid in T_NC_R and uid in T_NC_R[cid]: return True
-    if cid in T_LOCK and uid in T_LOCK[cid]: return True
-    if cid in T_MUTE and uid in T_MUTE[cid]: return True
-    if cid in T_REPLY and uid in T_REPLY[cid]: return True
-    return False
+def is_target_user(st, cid, uid):
+    if not uid:
+        return False
+    return (
+        (cid in st["t_delname"] and uid in st["t_delname"][cid]) or
+        (cid in st["t_nc_l"] and uid in st["t_nc_l"][cid]) or
+        (cid in st["t_nc_m"] and uid in st["t_nc_m"][cid]) or
+        (cid in st["t_nc_r"] and uid in st["t_nc_r"][cid]) or
+        (cid in st["t_lock"] and uid in st["t_lock"][cid]) or
+        (cid in st["t_mute"] and uid in st["t_mute"][cid]) or
+        (cid in st["t_reply"] and uid in st["t_reply"][cid])
+    )
 
 # =====================================================================
-# RENDER HTTP HEALTH-CHECK DUMMY SERVER
+# RENDER HTTP HEALTH-CHECK SERVER (KEEP-ALIVE FOR CRON-JOB.ORG)
 # =====================================================================
 async def start_render_health_server():
     port = int(os.environ.get("PORT", 10000))
     async def handle_http_request(reader, writer):
         try:
-            line = await reader.readline()
+            await reader.readline()
             while True:
                 header = await reader.readline()
-                if not header or header == b"\r\n": break
-            body = json.dumps({"status": "healthy", "service": "Userbot"}, indent=2).encode("utf-8")
-            response = (b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: " + str(len(body)).encode("ascii") + b"\r\nConnection: close\r\n\r\n" + body)
+                if not header or header == b"\r\n":
+                    break
+            active_accs = [aid for aid, st in ACCOUNT_STATES.items() if st]
+            body = json.dumps({"status": "healthy", "active_accounts": active_accs}).encode("utf-8")
+            response = (
+                b"HTTP/1.1 200 OK\r\n"
+                b"Content-Type: application/json\r\n"
+                b"Content-Length: " + str(len(body)).encode("ascii") + b"\r\n"
+                b"Connection: close\r\n\r\n" + body
+            )
             writer.write(response)
             await writer.drain()
-        except: pass
+        except Exception:
+            pass
         finally:
             try:
                 writer.close()
                 await writer.wait_closed()
-            except: pass
+            except Exception:
+                pass
     try:
-        server = await asyncio.start_server(handle_http_request, "0.0.0.0", port)
-        return server
-    except: return None
+        return await asyncio.start_server(handle_http_request, "0.0.0.0", port)
+    except Exception:
+        return None
+
+# =====================================================================
+# PERSISTENT PER-ACCOUNT SETTINGS (LOCAL JSON + TELEGRAM SAVED MESSAGES)
+# =====================================================================
+def serialize_single_acc(st):
+    return {
+        "r": list(st["reply_chats"]),
+        "m": list(st["mute_chats"]),
+        "l": list(st["lock_chats"]),
+        "u": list(st["unmute_exempts"]),
+        "all_dm": st["mute_all"],
+        "del_name_chats": list(st["del_name_chats"]),
+        "pin": list(st["pin_chats"]),
+        "pin_all": st["pin_all"],
+        "pin_del": list(st["pin_del_chats"]),
+        "pin_del_all": st["pin_del_all"],
+        "pin_exempt": list(st["pin_exempts"]),
+        "pin_reaction": st["pin_reaction"],
+        "gc_replies": st["gc_replies"],
+        "dm_replies": st["dm_replies"],
+        "nc_titles": st["nc_titles"],
+        "tr": {str(k): list(v) for k, v in st["t_reply"].items() if v},
+        "tm": {str(k): list(v) for k, v in st["t_mute"].items() if v},
+        "tl": {str(k): list(v) for k, v in st["t_lock"].items() if v},
+        "ncr": {str(k): list(v) for k, v in st["t_nc_r"].items() if v},
+        "ncm": {str(k): list(v) for k, v in st["t_nc_m"].items() if v},
+        "ncl": {str(k): list(v) for k, v in st["t_nc_l"].items() if v},
+        "tdel": {str(k): list(v) for k, v in st["t_delname"].items() if v},
+    }
+
+def deserialize_single_acc(st, d):
+    if not isinstance(d, dict):
+        return
+    st["reply_chats"].clear(); st["reply_chats"].update(d.get("r", []))
+    st["mute_chats"].clear(); st["mute_chats"].update(d.get("m", []))
+    st["lock_chats"].clear(); st["lock_chats"].update(d.get("l", []))
+    st["unmute_exempts"].clear(); st["unmute_exempts"].update(d.get("u", []))
+    st["del_name_chats"].clear(); st["del_name_chats"].update(d.get("del_name_chats", []))
+    st["mute_all"] = bool(d.get("all_dm", False))
+    st["pin_chats"].clear(); st["pin_chats"].update(d.get("pin", []))
+    st["pin_all"] = bool(d.get("pin_all", False))
+    st["pin_del_chats"].clear(); st["pin_del_chats"].update(d.get("pin_del", []))
+    st["pin_del_all"] = bool(d.get("pin_del_all", False))
+    st["pin_exempts"].clear(); st["pin_exempts"].update(d.get("pin_exempt", []))
+    st["pin_reaction"] = str(d.get("pin_reaction", "🔥"))
+    if len(d.get("gc_replies", [])) >= 5:
+        st["gc_replies"][:] = d["gc_replies"][:5]
+    if len(d.get("dm_replies", [])) >= 5:
+        st["dm_replies"][:] = d["dm_replies"][:5]
+    if len(d.get("nc_titles", [])) >= 2:
+        st["nc_titles"][:] = d["nc_titles"][:10]
+    for target_key, json_key in [
+        ("t_reply", "tr"), ("t_mute", "tm"), ("t_lock", "tl"),
+        ("t_nc_r", "ncr"), ("t_nc_m", "ncm"), ("t_nc_l", "ncl"), ("t_delname", "tdel")
+    ]:
+        st[target_key].clear()
+        for k, v in d.get(json_key, {}).items():
+            st[target_key][int(k)] = set(v)
+
+def build_cfg_dict():
+    return {
+        "v": 2,
+        "accounts": {str(k): bool(v) for k, v in ACCOUNT_STATES.items()},
+        "per_acc": {str(aid): serialize_single_acc(get_st(aid)) for aid in ACCOUNTS_BY_ID}
+    }
+
+def apply_cfg_dict(d):
+    if not isinstance(d, dict):
+        return
+    for aid in ACCOUNTS_BY_ID:
+        if str(aid) in d.get("accounts", {}):
+            ACCOUNT_STATES[aid] = bool(d["accounts"][str(aid)])
+    if "per_acc" in d and isinstance(d["per_acc"], dict):
+        for aid in ACCOUNTS_BY_ID:
+            if str(aid) in d["per_acc"]:
+                deserialize_single_acc(get_st(aid), d["per_acc"][str(aid)])
+    else:
+        # Backward compatibility if migrating from V1 format
+        deserialize_single_acc(get_st(1), d)
+
+async def _push_cloud_backup():
+    global BACKUP_MSG_ID
+    await asyncio.sleep(2.0)  # Debounce rapid command saves
+    primary_client = CLIENTS.get(1)
+    if not primary_client or not primary_client.is_connected():
+        for cl in CLIENTS.values():
+            if cl and cl.is_connected():
+                primary_client = cl
+                break
+    if not primary_client:
+        return
+    try:
+        payload = f"{BACKUP_TAG}\n```json\n{json.dumps(build_cfg_dict(), separators=(',', ':'))}\n```"
+        if BACKUP_MSG_ID:
+            try:
+                await primary_client.edit_message("me", BACKUP_MSG_ID, payload)
+                return
+            except Exception:
+                BACKUP_MSG_ID = None
+        async for msg in primary_client.iter_messages("me", limit=15, search=BACKUP_TAG):
+            if msg.raw_text and BACKUP_TAG in msg.raw_text:
+                BACKUP_MSG_ID = msg.id
+                await primary_client.edit_message("me", BACKUP_MSG_ID, payload)
+                return
+        sent = await primary_client.send_message("me", payload)
+        BACKUP_MSG_ID = sent.id
+        try:
+            await primary_client.pin_message("me", sent.id, notify=False)
+        except Exception:
+            pass
+    except Exception:
+        pass
 
 def save_cfg():
+    global CLOUD_SYNC_TASK
     try:
-        d = {
-            "accounts": {str(k): bool(v) for k, v in ACCOUNT_STATES.items()},
-            "r": list(REPLY_CHATS), "m": list(MUTE_CHATS), "l": list(LOCK_CHATS), "u": list(UNMUTE_EXEMPTS),
-            "all_dm": MUTE_ALL, "del_name_chats": list(DEL_NAME_CHATS), "pin": list(PIN_CHATS),
-            "pin_all": PIN_ALL, "pin_del": list(PIN_DEL_CHATS), "pin_del_all": PIN_DEL_ALL,
-            "pin_exempt": list(PIN_EXEMPTS), "pin_reaction": PIN_REACTION,
-            "gc_replies": GC_REPLIES, "dm_replies": DM_REPLIES, "nc_titles": NC_TITLES,
-            "tr": {str(k): list(v) for k, v in T_REPLY.items()}, "tm": {str(k): list(v) for k, v in T_MUTE.items()},
-            "tl": {str(k): list(v) for k, v in T_LOCK.items()}, "ncr": {str(k): list(v) for k, v in T_NC_R.items()},
-            "ncm": {str(k): list(v) for k, v in T_NC_M.items()}, "ncl": {str(k): list(v) for k, v in T_NC_L.items()},
-            "tdel": {str(k): list(v) for k, v in T_DELNAME.items()}
-        }
-        with open(FILE, "w", encoding="utf-8") as f: json.dump(d, f, indent=2)
-    except: pass
+        with open(FILE, "w", encoding="utf-8") as f:
+            json.dump(build_cfg_dict(), f, indent=2)
+    except Exception:
+        pass
+    try:
+        loop = asyncio.get_running_loop()
+        if CLOUD_SYNC_TASK and not CLOUD_SYNC_TASK.done():
+            CLOUD_SYNC_TASK.cancel()
+        CLOUD_SYNC_TASK = loop.create_task(_push_cloud_backup())
+    except Exception:
+        pass
 
 def load_cfg():
-    global MUTE_ALL, GC_REPLIES, DM_REPLIES, NC_TITLES, PIN_ALL, PIN_DEL_ALL, PIN_REACTION
-    if not os.path.exists(FILE): return
+    if not os.path.exists(FILE):
+        return
     try:
-        with open(FILE, "r", encoding="utf-8") as f: d = json.load(f)
-        for aid in [acc["id"] for acc in ACCOUNTS_CONFIG]:
-            if str(aid) in d.get("accounts", {}): ACCOUNT_STATES[aid] = bool(d["accounts"][str(aid)])
-        REPLY_CHATS.clear(); REPLY_CHATS.update(d.get("r", []))
-        MUTE_CHATS.clear(); MUTE_CHATS.update(d.get("m", []))
-        LOCK_CHATS.clear(); LOCK_CHATS.update(d.get("l", []))
-        UNMUTE_EXEMPTS.clear(); UNMUTE_EXEMPTS.update(d.get("u", []))
-        DEL_NAME_CHATS.clear(); DEL_NAME_CHATS.update(d.get("del_name_chats", []))
-        MUTE_ALL = d.get("all_dm", False)
-        PIN_CHATS.clear(); PIN_CHATS.update(d.get("pin", []))
-        PIN_ALL = bool(d.get("pin_all", False))
-        PIN_DEL_CHATS.clear(); PIN_DEL_CHATS.update(d.get("pin_del", []))
-        PIN_DEL_ALL = bool(d.get("pin_del_all", False))
-        PIN_EXEMPTS.clear(); PIN_EXEMPTS.update(d.get("pin_exempt", []))
-        PIN_REACTION = str(d.get("pin_reaction", "🔥"))
-        if len(d.get("gc_replies", [])) >= 5: GC_REPLIES[:] = d["gc_replies"][:5]
-        if len(d.get("dm_replies", [])) >= 5: DM_REPLIES[:] = d["dm_replies"][:5]
-        if len(d.get("nc_titles", [])) >= 2: NC_TITLES[:] = d["nc_titles"][:10]
-        for k, v in d.get("tr", {}).items(): T_REPLY[int(k)] = set(v)
-        for k, v in d.get("tm", {}).items(): T_MUTE[int(k)] = set(v)
-        for k, v in d.get("tl", {}).items(): T_LOCK[int(k)] = set(v)
-        for k, v in d.get("ncr", {}).items(): T_NC_R[int(k)] = set(v)
-        for k, v in d.get("ncm", {}).items(): T_NC_M[int(k)] = set(v)
-        for k, v in d.get("ncl", {}).items(): T_NC_L[int(k)] = set(v)
-        for k, v in d.get("tdel", {}).items(): T_DELNAME[int(k)] = set(v)
-    except: pass
+        with open(FILE, "r", encoding="utf-8") as f:
+            apply_cfg_dict(json.load(f))
+    except Exception:
+        pass
 
-async def _delayed_delete(msg, delay):
-    try: await asyncio.sleep(delay); await msg.delete()
-    except: pass
-
-async def fb(e, txt, d=VANISH):
+async def restore_cfg_from_cloud(client):
+    global BACKUP_MSG_ID
+    if not client or not client.is_connected():
+        return False
     try:
-        target = await e.edit(txt, parse_mode="md")
-        if d: asyncio.create_task(_delayed_delete(target or e, d))
-    except:
+        async for msg in client.iter_messages("me", limit=20, search=BACKUP_TAG):
+            if msg.raw_text and BACKUP_TAG in msg.raw_text:
+                BACKUP_MSG_ID = msg.id
+                m = re.search(r"\{.*\}", msg.raw_text, re.DOTALL)
+                if m:
+                    data = json.loads(m.group(0))
+                    apply_cfg_dict(data)
+                    with open(FILE, "w", encoding="utf-8") as f:
+                        json.dump(data, f, indent=2)
+                    return True
+    except Exception:
+        pass
+    return False
+
+# =====================================================================
+# REMOTE CHAT & USER RESOLVER (PER-ACCOUNT DIALOG & ENTITY ISOLATION)
+# =====================================================================
+async def _refresh_dialogs_if_needed(client, st):
+    now = time.time()
+    dcache = st["dialog_cache"]
+    if now - dcache["ts"] < 45 and dcache["items"]:
+        return dcache["items"]
+    items = []
+    try:
+        async for dlg in client.iter_dialogs(limit=120):
+            ent = dlg.entity
+            title = (getattr(ent, "title", None) or getattr(ent, "first_name", None) or "").strip()
+            uname_val = (getattr(ent, "username", None) or "").strip()
+            items.append({
+                "id": dlg.id,
+                "raw_id": getattr(ent, "id", dlg.id),
+                "title": title.lower(),
+                "username": uname_val.lower(),
+                "is_group": dlg.is_group or dlg.is_channel,
+                "entity": ent
+            })
+        dcache["ts"] = now
+        dcache["items"] = items
+    except Exception:
+        pass
+    return dcache["items"]
+
+async def resolve_chat_token(client, st, tok):
+    if not tok:
+        return None, None
+    clean = tok.strip().strip('"').strip("'")
+    clean_no_at = clean[1:] if clean.startswith("@") else clean
+
+    if clean_no_at.lstrip("-").isdigit():
+        num_id = int(clean_no_at)
         try:
-            target = await e.edit(txt, parse_mode=None)
-            if d: asyncio.create_task(_delayed_delete(target or e, d))
-        except: pass
+            ent = await client.get_entity(num_id)
+            cid = await client.get_peer_id(ent)
+            return cid, getattr(ent, "title", None) or getattr(ent, "first_name", str(cid))
+        except Exception:
+            return num_id, str(num_id)
+
+    try:
+        ent = await client.get_entity(clean_no_at)
+        cid = await client.get_peer_id(ent)
+        return cid, getattr(ent, "title", None) or getattr(ent, "first_name", str(cid))
+    except Exception:
+        pass
+
+    items = await _refresh_dialogs_if_needed(client, st)
+    q = clean_no_at.lower()
+    for it in items:
+        if it["username"] == q or it["title"] == q:
+            return it["id"], getattr(it["entity"], "title", None) or getattr(it["entity"], "first_name", str(it["id"]))
+    for it in items:
+        if q and q in it["title"]:
+            return it["id"], getattr(it["entity"], "title", None) or getattr(it["entity"], "first_name", str(it["id"]))
+    return None, None
+
+def tokenize_args(arg_str):
+    if not arg_str:
+        return []
+    raw_tokens = re.findall(r'@?"[^"]+"|@?\'[^\']+\'|\S+', arg_str.strip())
+    cleaned = []
+    for t in raw_tokens:
+        t = t.strip(",")
+        if t.startswith('@"') and t.endswith('"'):
+            t = "@" + t[2:-1]
+        elif t.startswith("@'") and t.endswith("'"):
+            t = "@" + t[2:-1]
+        elif (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")):
+            t = t[1:-1]
+        if t:
+            cleaned.append(t)
+    return cleaned
+
+async def resolve_target_chat_from_arg(client, st, default_cid, arg_str):
+    tokens = tokenize_args(arg_str)
+    if not tokens:
+        return default_cid, None
+    cid, label = await resolve_chat_token(client, st, tokens[-1])
+    if cid is not None:
+        return cid, label
+    return default_cid, None
 
 class TargetUser:
     def __init__(self, uid, first_name=None, username=None):
@@ -365,175 +563,298 @@ class TargetUser:
         self.username = username
         self.title = None
 
-async def get_targets(client, e, arg=""):
-    targets = []
+async def resolve_single_user(client, st, tok, chat_hint=None):
+    clean = tok.lstrip("@").strip()
+    if clean.lstrip("-").isdigit():
+        uid = int(clean)
+        try:
+            ent = await client.get_entity(uid)
+            return ent if hasattr(ent, "first_name") else TargetUser(uid)
+        except Exception:
+            return TargetUser(uid)
+    try:
+        ent = await client.get_entity(clean)
+        if getattr(ent, "first_name", None) or getattr(ent, "username", None):
+            return ent
+    except Exception:
+        pass
+    items = await _refresh_dialogs_if_needed(client, st)
+    q = clean.lower()
+    for it in items:
+        if not it["is_group"] and (it["username"] == q or it["title"] == q or (q and q in it["title"])):
+            return it["entity"]
+    if chat_hint:
+        try:
+            async for p in client.iter_participants(chat_hint, search=clean, limit=5):
+                return p
+        except Exception:
+            pass
+    return None
+
+async def parse_user_and_gc_targets(client, st, e, arg_str, default_cid):
+    tokens = tokenize_args(arg_str)
+    target_cid = default_cid
+    target_gc_label = None
+    users = []
+
     if e.is_reply:
         try:
             r = await e.get_reply_message()
             if r and r.sender_id:
-                s = getattr(r, '_sender', None) or getattr(r, 'sender', None)
-                if not s: s = await r.get_sender()
-                targets.append(s if s else TargetUser(r.sender_id))
-        except: pass
-    tokens = [p.strip(",;@ ") for p in (arg or "").split() if p.strip(",;@ ")]
+                s = getattr(r, "_sender", None) or getattr(r, "sender", None) or await r.get_sender()
+                users.append(s if s else TargetUser(r.sender_id))
+        except Exception:
+            pass
+
+    if not tokens:
+        return target_cid, target_gc_label, users
+
+    if len(tokens) >= 2 or (len(tokens) == 1 and users):
+        maybe_gc_id, maybe_gc_name = await resolve_chat_token(client, st, tokens[-1])
+        if maybe_gc_id is not None and (str(maybe_gc_id).startswith("-100") or maybe_gc_id < 0 or any(
+            d["id"] == maybe_gc_id and d["is_group"] for d in st["dialog_cache"]["items"]
+        )):
+            target_cid = maybe_gc_id
+            target_gc_label = maybe_gc_name
+            tokens = tokens[:-1]
+
     for tok in tokens:
-        clean_tok = tok.lstrip("-")
+        u_ent = await resolve_single_user(client, st, tok, chat_hint=target_cid)
+        if u_ent and all(getattr(u_ent, "id", None) != getattr(x, "id", None) for x in users):
+            users.append(u_ent)
+
+    return target_cid, target_gc_label, users
+
+# =====================================================================
+# HELPERS & UI FEEDBACK
+# =====================================================================
+async def _delayed_delete(msg, delay):
+    try:
+        await asyncio.sleep(delay)
+        await msg.delete()
+    except Exception:
+        pass
+
+async def fb(e, txt, d=VANISH):
+    try:
+        target = await e.edit(txt, parse_mode="md")
+        if d:
+            asyncio.create_task(_delayed_delete(target or e, d))
+    except Exception:
         try:
-            uid = int(tok) if clean_tok.isdigit() else tok
-            ent = await client.get_entity(uid)
-            if ent and ent not in targets: targets.append(ent)
-        except:
-            if clean_tok.isdigit(): targets.append(TargetUser(int(tok)))
-    return targets
+            target = await e.edit(txt, parse_mode=None)
+            if d:
+                asyncio.create_task(_delayed_delete(target or e, d))
+        except Exception:
+            pass
 
 def uname(u):
-    if not u: return "@User"
-    if getattr(u, "username", None): return f"@{u.username}"
+    if not u:
+        return "@User"
+    if getattr(u, "username", None):
+        return f"@{u.username}"
     uid = getattr(u, "id", None)
     clean_name = re.sub(r"[\[\]\(\)*_`]", "", getattr(u, "first_name", "") or getattr(u, "title", "")).strip() or f"User_{uid}"
     return f"[{clean_name}](tg://user?id={uid})" if uid else f"@{clean_name}"
 
-async def get_mention(e):
+async def get_mention(st, e):
     sid = e.sender_id
-    if not sid: return "@there"
-    if sid in USER_CACHE: return USER_CACHE[sid]
-    s = getattr(e, '_sender', None) or getattr(e, 'sender', None)
+    if not sid:
+        return "@there"
+    ucache = st["user_cache"]
+    if sid in ucache:
+        return ucache[sid]
+    s = getattr(e, "_sender", None) or getattr(e, "sender", None)
     if not s:
-        try: s = await e.get_sender()
-        except: s = None
+        try:
+            s = await e.get_sender()
+        except Exception:
+            s = None
     mention = uname(s) if s else f"[User](tg://user?id={sid})"
-    USER_CACHE[sid] = mention
+    ucache[sid] = mention
     return mention
 
-def is_media(m): return m and not isinstance(m, (MessageMediaWebPage, MessageMediaEmpty, MessageMediaUnsupported))
-
-def cache(m):
-    if not m or not getattr(m, "chat_id", None) or not getattr(m, "id", None): return
-    if len(CACHE) > 100: CACHE.pop(next(iter(CACHE))) 
-    CACHE[(m.chat_id, m.id)] = {"cid": m.chat_id, "sid": getattr(m, "sender_id", None), "text": m.text or m.raw_text or "", "media": m.media if is_media(m.media) else None}
-
-async def toggle_target(client, e, arg, dic, label, is_stop=False):
-    cid, t = e.chat_id, await get_targets(client, e, arg)
+async def toggle_target(client, acc_id, e, arg, dict_key, label, is_stop=False):
+    st = get_st(acc_id)
+    dic = st[dict_key]
+    cid, gc_label, t = await parse_user_and_gc_targets(client, st, e, arg, e.chat_id)
+    loc_tag = f" in **{gc_label}**" if gc_label else ""
+    acc_tag = f"[Acc {acc_id}] "
     if is_stop:
         if t and cid in dic:
-            for x in t: dic[cid].discard(x.id)
-            msg = f"🛑 {label} OFF: " + ", ".join(uname(x) for x in t)
-        elif cid in dic: dic[cid].clear(); msg = f"🛑 All {label} cleared."
-        else: msg = f"ℹ️ No active {label}."
+            for x in t:
+                dic[cid].discard(x.id)
+            if not dic[cid]:
+                dic.pop(cid, None)
+            msg = f"🛑 {acc_tag}{label} OFF{loc_tag}: " + ", ".join(uname(x) for x in t)
+        elif cid in dic:
+            dic.pop(cid, None)
+            msg = f"🛑 {acc_tag}All {label} cleared{loc_tag}."
+        else:
+            msg = f"ℹ️ {acc_tag}No active {label}{loc_tag}."
     else:
-        if not t: return await fb(e, "⚠️ **Specify @username, ID, or reply.**")
+        if not t:
+            return await fb(e, "⚠️ **Specify @username, ID, or Profile Name (optional `@gc_name`).**")
         dic.setdefault(cid, set()).update(x.id for x in t)
-        msg = f"🎯 **{label} ON**: " + ", ".join(uname(x) for x in t)
+        msg = f"🎯 **{acc_tag}{label} ON**{loc_tag}: " + ", ".join(uname(x) for x in t)
     save_cfg()
     return await fb(e, msg)
 
-def should_auto_pin(cid): return False if not cid or cid in PIN_EXEMPTS else (True if PIN_ALL else cid in PIN_CHATS)
-def should_delete_pin_notification(cid): return False if not cid else (True if PIN_DEL_ALL else cid in PIN_DEL_CHATS)
-def is_pin_action(m): return True if getattr(m, "new_pin", False) or type(getattr(m, "action", None)).__name__ == "MessageActionPinMessage" else False
+def should_auto_pin(st, cid):
+    return False if not cid or cid in st["pin_exempts"] else (True if st["pin_all"] else cid in st["pin_chats"])
 
-async def pin_own_message(client, msg):
-    if not msg or not getattr(msg, "id", None) or not getattr(msg, "chat_id", None): return
+def should_delete_pin_notification(st, cid):
+    return False if not cid else (True if st["pin_del_all"] else cid in st["pin_del_chats"])
+
+def is_pin_action(m):
+    return True if getattr(m, "new_pin", False) or type(getattr(m, "action", None)).__name__ == "MessageActionPinMessage" else False
+
+async def pin_own_message(client, st, msg):
+    if not msg or not getattr(msg, "id", None) or not getattr(msg, "chat_id", None):
+        return
     key = (msg.chat_id, msg.id)
-    if key in PIN_PROCESSED: return
-    PIN_PROCESSED.add(key)
-    try: await client.pin_message(msg.chat_id, msg.id, notify=False)
-    except: pass
+    if key in st["pin_processed"]:
+        return
+    st["pin_processed"].add(key)
+    try:
+        await client.pin_message(msg.chat_id, msg.id, notify=False)
+    except Exception:
+        pass
 
-async def toggle_pin(client, e, arg, is_stop=False):
-    cid, tokens = e.chat_id, [p.strip(",;@ ") for p in (arg or "").split() if p.strip(",;@ ") and p.lower() not in ("on", "off")]
+async def toggle_pin(client, acc_id, e, arg, is_stop=False):
+    st = get_st(acc_id)
+    tokens = [t for t in tokenize_args(arg) if t.lower() not in ("on", "off")]
     if not tokens:
-        if is_stop: PIN_CHATS.discard(cid)
-        else: PIN_CHATS.add(cid); PIN_EXEMPTS.discard(cid)
+        cid = e.chat_id
+        if is_stop:
+            st["pin_chats"].discard(cid)
+        else:
+            st["pin_chats"].add(cid)
+            st["pin_exempts"].discard(cid)
         save_cfg()
-        return await fb(e, "🛑 **PIN OFF**" if is_stop else "✅ **PIN ON**")
+        return await fb(e, f"🛑 **[Acc {acc_id}] PIN OFF**" if is_stop else f"✅ **[Acc {acc_id}] PIN ON**")
+    names = []
     for tok in tokens:
-        try:
-            ent = await client.get_entity(int(tok) if tok.lstrip("-").isdigit() else tok)
-            target_id = getattr(ent, "id", None)
-            if target_id:
-                if is_stop: PIN_CHATS.discard(target_id)
-                else: PIN_CHATS.add(target_id)
-        except: pass
+        target_id, label = await resolve_chat_token(client, st, tok)
+        if target_id:
+            if is_stop:
+                st["pin_chats"].discard(target_id)
+            else:
+                st["pin_chats"].add(target_id)
+                st["pin_exempts"].discard(target_id)
+            names.append(label or str(target_id))
     save_cfg()
-    return await fb(e, "Done.")
+    return await fb(e, f"{'🛑' if is_stop else '✅'} [Acc {acc_id}] PIN {'OFF' if is_stop else 'ON'}: {', '.join(names) or 'Done'}")
 
-async def react_to_pin_notification(client, m):
-    try: await client.send_reaction(m.chat_id, m.id, PIN_REACTION)
-    except: pass
+async def react_to_pin_notification(client, st, m):
+    try:
+        await client.send_reaction(m.chat_id, m.id, st["pin_reaction"])
+    except Exception:
+        pass
 
 async def handle_pin_notification(client, acc_id, m):
-    if not m or not getattr(m, "chat_id", None) or not getattr(m, "id", None): return
+    if not m or not getattr(m, "chat_id", None) or not getattr(m, "id", None):
+        return
+    st = get_st(acc_id)
     cid, mid, sid = m.chat_id, m.id, getattr(m, "sender_id", None)
     if getattr(m, "out", False) or (sid == MY_IDS.get(acc_id)):
-        if (cid, mid) not in PIN_NOTIF_REACTED:
-            PIN_NOTIF_REACTED.add((cid, mid))
-            asyncio.create_task(react_to_pin_notification(client, m))
-    elif should_delete_pin_notification(cid):
-        if (cid, mid) not in PIN_NOTIF_DELETED:
-            PIN_NOTIF_DELETED.add((cid, mid))
-            try: await m.delete()
-            except: pass
+        if (cid, mid) not in st["pin_notif_reacted"]:
+            st["pin_notif_reacted"].add((cid, mid))
+            asyncio.create_task(react_to_pin_notification(client, st, m))
+    elif should_delete_pin_notification(st, cid):
+        if (cid, mid) not in st["pin_notif_deleted"]:
+            st["pin_notif_deleted"].add((cid, mid))
+            try:
+                await m.delete()
+            except Exception:
+                pass
 
-async def execute_title_change(client, cid, title):
+async def execute_title_change(client, st, cid, title):
     try:
-        cached_info = ENTITY_CACHE.get(cid)
+        ecache = st["entity_cache"]
+        cached_info = ecache.get(cid)
         if not cached_info:
             ent = await client.get_entity(cid)
-            ENTITY_CACHE[cid] = cached_info = {"input": await client.get_input_entity(cid), "is_channel": getattr(ent, "megagroup", False) or getattr(ent, "broadcast", False) or isinstance(ent, Channel), "raw_id": getattr(ent, "id", abs(cid))}
-        if cached_info["is_channel"]: await client(EditTitleRequest(channel=cached_info["input"], title=title))
-        else: await client(EditChatTitleRequest(chat_id=cached_info["raw_id"], title=title))
+            ecache[cid] = cached_info = {
+                "input": await client.get_input_entity(cid),
+                "is_channel": getattr(ent, "megagroup", False) or getattr(ent, "broadcast", False) or isinstance(ent, Channel),
+                "raw_id": getattr(ent, "id", abs(cid))
+            }
+        if cached_info["is_channel"]:
+            await client(EditTitleRequest(channel=cached_info["input"], title=title))
+        else:
+            await client(EditChatTitleRequest(chat_id=cached_info["raw_id"], title=title))
         return True, "Success"
-    except errors.FloodWaitError as err: await asyncio.sleep(err.seconds + 1); return False, "FloodWait"
-    except Exception: return False, "Error"
+    except errors.FloodWaitError as err:
+        await asyncio.sleep(err.seconds + 1)
+        return False, "FloodWait"
+    except Exception:
+        return False, "Error"
 
-async def nc_worker(client, cid, names):
+async def nc_worker(client, st, cid, names):
     i = 0
+    tasks_dict = st["nc_tasks"]
     try:
-        while cid in NC_TASKS:
+        while cid in tasks_dict:
             title = names[i % len(names)]
             i += 1
-            await execute_title_change(client, cid, title)
+            await execute_title_change(client, st, cid, title)
             await asyncio.sleep(NC_INT)
-    except asyncio.CancelledError: pass
-    finally: NC_TASKS.pop(cid, None)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        tasks_dict.pop(cid, None)
 
-def start_nc(client, cid, names):
-    stop_nc_task(cid)
-    NC_TASKS[cid] = asyncio.create_task(nc_worker(client, cid, [n.strip() for n in names if n.strip()] or list(DEFAULT_NC_TITLES)))
+def start_nc(client, st, cid, names):
+    stop_nc_task(st, cid)
+    clean_names = [n.strip() for n in names if n.strip()] or list(DEFAULT_NC_TITLES)
+    st["nc_tasks"][cid] = asyncio.create_task(nc_worker(client, st, cid, clean_names))
 
-def stop_nc_task(cid):
-    if cid in NC_TASKS: NC_TASKS.pop(cid).cancel()
-    NC_SETUP.pop(cid, None)
+def stop_nc_task(st, cid):
+    if cid in st["nc_tasks"]:
+        st["nc_tasks"].pop(cid).cancel()
+    st["nc_setup"].pop(cid, None)
 
 async def start_account(acc_id):
     conf = ACCOUNTS_BY_ID.get(acc_id)
-    if not conf: return False, "Not found"
+    if not conf:
+        return False, "Not found"
     cl = CLIENTS.get(acc_id)
-    if cl and cl.is_connected(): return True, "Connected"
+    if cl and cl.is_connected():
+        return True, "Connected"
     session_instance = StringSession(conf["session"]) if isinstance(conf["session"], str) else conf["session"]
-    
+
     if not cl:
         cl = TelegramClient(session_instance, conf["api_id"], conf["api_hash"])
         CLIENTS[acc_id] = cl
         register_handlers(cl, acc_id)
-        
+
     try:
         await cl.connect()
-        if not await cl.is_user_authorized(): return False, "Auth failed"
+        if not await cl.is_user_authorized():
+            return False, "Auth failed"
         me = await cl.get_me()
         MY_IDS[acc_id] = me.id
         USER_INFOS[acc_id] = {"id": me.id, "name": me.first_name, "username": me.username or "None", "phone": conf["phone"]}
         return True, f"Connected as {me.first_name}"
-    except Exception as exc: return False, str(exc)
+    except Exception as exc:
+        return False, str(exc)
 
 async def stop_account(acc_id):
+    st = get_st(acc_id)
+    for cid in list(st["nc_tasks"].keys()):
+        stop_nc_task(st, cid)
     cl = CLIENTS.pop(acc_id, None)
-    if cl and cl.is_connected(): await cl.disconnect()
-    MY_IDS.pop(acc_id, None); USER_INFOS.pop(acc_id, None)
+    if cl and cl.is_connected():
+        await cl.disconnect()
+    MY_IDS.pop(acc_id, None)
+    USER_INFOS.pop(acc_id, None)
 
 async def toggle_account_cmd(e, acc_num, turn_on):
-    if acc_num not in (1, 2, 3, 4, 5): return await fb(e, "⚠️ Invalid acc num")
-    ACCOUNT_STATES[acc_num] = turn_on; save_cfg()
+    if acc_num not in (1, 2, 3, 4, 5):
+        return await fb(e, "⚠️ Invalid acc num")
+    ACCOUNT_STATES[acc_num] = turn_on
+    save_cfg()
     if turn_on:
         ok, res = await start_account(acc_num)
         return await fb(e, f"✅ **Acc {acc_num} ON:** {res}" if ok else f"❌ Error: {res}")
@@ -546,11 +867,13 @@ async def toggle_all_accounts_cmd(e, turn_on):
     for aid in (1, 2, 3, 4, 5):
         ACCOUNT_STATES[aid] = turn_on
         if turn_on:
-            ok, _ = await start_account(aid); results.append(f"{aid}: {'🟢' if ok else '❌'}")
+            ok, _ = await start_account(aid)
+            results.append(f"{aid}: {'🟢' if ok else '❌'}")
             await asyncio.sleep(0.5)
-        else: await stop_account(aid)
+        else:
+            await stop_account(aid)
     save_cfg()
-    return await fb(e, f"✅ **All ON:** " + " | ".join(results) if turn_on else "🛑 **All OFF**")
+    return await fb(e, "✅ **All ON:** " + " | ".join(results) if turn_on else "🛑 **All OFF**")
 
 async def show_accounts_status(e):
     lines = ["📱 **ACCOUNTS DASHBOARD**"]
@@ -563,221 +886,391 @@ async def show_accounts_status(e):
         lines.append(f"• Acc {aid} ({acc['phone']}): {status}")
     return await fb(e, "\n".join(lines), d=None)
 
+# =====================================================================
+# EVENT HANDLERS (STRICTLY SCOPED TO THE ACCOUNT THAT SENT THE COMMAND)
+# =====================================================================
 def register_handlers(client, acc_id):
     @client.on(events.NewMessage(outgoing=True))
     @client.on(events.MessageEdited(outgoing=True))
     async def on_cmd(e):
-        global MUTE_ALL, GC_REPLIES, DM_REPLIES, NC_TITLES, PIN_ALL, PIN_DEL_ALL, PIN_REACTION
+        # Ignore messages relayed from another owned account if somehow echoed
+        if getattr(e, "sender_id", None) and e.sender_id != MY_IDS.get(acc_id):
+            return
+
+        st = get_st(acc_id)
         txt = (e.raw_text or "").strip()
         cid = e.chat_id
-        if cid is None: return
+        if cid is None:
+            return
 
         if is_pin_action(e):
-            asyncio.create_task(handle_pin_notification(client, acc_id, e)); return
+            asyncio.create_task(handle_pin_notification(client, acc_id, e))
+            return
 
-        if cid in NC_SETUP and not txt.startswith("*"):
-            st = NC_SETUP[cid]
+        if cid in st["nc_setup"] and not txt.startswith(("*", "/")):
+            setup_box = st["nc_setup"][cid]
             for l in [x.strip() for x in (txt.split("\n") if "\n" in txt else txt.split("|")) if x.strip()]:
-                if len(st["names"]) < 5: st["names"].append(l)
-            try: await e.delete()
-            except: pass
-            if len(st["names"]) < 5:
-                await fb(e, f"Send Name {len(st['names'])+1}/5", d=None)
+                if len(setup_box["names"]) < 5:
+                    setup_box["names"].append(l)
+            try:
+                await e.delete()
+            except Exception:
+                pass
+            if len(setup_box["names"]) < 5:
+                await fb(e, f"[Acc {acc_id}] Send Name {len(setup_box['names'])+1}/5", d=None)
             else:
-                names = st["names"][:5]; NC_TITLES[:] = names; save_cfg(); del NC_SETUP[cid]; start_nc(client, cid, names)
-                await fb(e, f"🚀 **NC Started**\n" + "\n".join(names))
+                names = setup_box["names"][:5]
+                st["nc_titles"][:] = names
+                save_cfg()
+                del st["nc_setup"][cid]
+                start_nc(client, st, cid, names)
+                await fb(e, f"🚀 **[Acc {acc_id}] NC Started**\n" + "\n".join(names))
             return
 
-        if not txt.startswith("*"):
-            if e.action is None and should_auto_pin(cid): asyncio.create_task(pin_own_message(client, e))
+        if not txt.startswith(("*", "/")):
+            if e.action is None and should_auto_pin(st, cid):
+                asyncio.create_task(pin_own_message(client, st, e))
             return
 
-        c = txt[1:].strip(); cl = c.lower()
-        if cl in ("accs", "acc status", "accounts"): return await show_accounts_status(e)
-        if re.match(r"^(?:acc|accs)\s*all\s*(on|off)$", cl): return await toggle_all_accounts_cmd(e, cl.endswith("on"))
+        c = txt[1:].strip()
+        cl = c.lower()
+
+        if cl in ("accs", "acc status", "accounts"):
+            return await show_accounts_status(e)
+        if re.match(r"^(?:acc|accs)\s*all\s*(on|off)$", cl):
+            return await toggle_all_accounts_cmd(e, cl.endswith("on"))
         acc_match = re.match(r"^(?:acc|account)\s*([1-5])\s*(on|off)$", cl)
-        if acc_match: return await toggle_account_cmd(e, int(acc_match.group(1)), acc_match.group(2)=="on")
+        if acc_match:
+            return await toggle_account_cmd(e, int(acc_match.group(1)), acc_match.group(2) == "on")
 
-        if cl == "clearcache" or cl == "cache":
+        if cl in ("clearcache", "cache"):
             d, f = clear_cache_files()
             return await fb(e, f"🧹 **Cache Cleaned:** {d} dirs, {f} files, RAM Trimmed & GC run.")
 
-        if cl == "help" or cl == "cmds": return await fb(e, HELP, d=None)
+        if cl == "sync":
+            await _push_cloud_backup()
+            return await fb(e, "☁️ **All 5 accounts' settings synced to Saved Messages.**")
+
+        if cl in ("help", "cmds"):
+            return await fb(e, HELP, d=None)
 
         if cl in ("gcmsgs", "gc reply"):
-            list_txt = "\n".join([f"**{i+1}.** {m}" for i, m in enumerate(GC_REPLIES)])
-            return await fb(e, f"👥 **[5 GROUP AUTO-REPLIES]**\n{list_txt}\n\n✏️ Change: `*setgc <1-5> <msg>`", d=None)
+            list_txt = "\n".join([f"**{i+1}.** {m}" for i, m in enumerate(st["gc_replies"])])
+            return await fb(e, f"👥 **[Acc {acc_id} - 5 GROUP AUTO-REPLIES]**\n{list_txt}\n\n✏️ Change: `*setgc <1-5> <msg>`", d=None)
 
         if cl.startswith("setgc"):
             parts = c.split(maxsplit=2)
-            if len(parts) >= 3 and parts[1].isdigit():
-                GC_REPLIES[int(parts[1])-1] = parts[2].strip(); save_cfg()
-                return await fb(e, f"✅ GC Reply {parts[1]} updated.")
+            if len(parts) >= 3 and parts[1].isdigit() and 1 <= int(parts[1]) <= 5:
+                st["gc_replies"][int(parts[1]) - 1] = parts[2].strip()
+                save_cfg()
+                return await fb(e, f"✅ [Acc {acc_id}] GC Reply {parts[1]} updated.")
 
         if cl in ("dmmsgs", "dm reply"):
-            list_txt = "\n".join([f"**{i+1}.** {m}" for i, m in enumerate(DM_REPLIES)])
-            return await fb(e, f"💬 **[5 DM AUTO-REPLIES]**\n{list_txt}\n\n✏️ Change: `*setdm <1-5> <msg>`", d=None)
+            list_txt = "\n".join([f"**{i+1}.** {m}" for i, m in enumerate(st["dm_replies"])])
+            return await fb(e, f"💬 **[Acc {acc_id} - 5 DM AUTO-REPLIES]**\n{list_txt}\n\n✏️ Change: `*setdm <1-5> <msg>`", d=None)
 
         if cl.startswith("setdm"):
             parts = c.split(maxsplit=2)
-            if len(parts) >= 3 and parts[1].isdigit():
-                DM_REPLIES[int(parts[1])-1] = parts[2].strip(); save_cfg()
-                return await fb(e, f"✅ DM Reply {parts[1]} updated.")
+            if len(parts) >= 3 and parts[1].isdigit() and 1 <= int(parts[1]) <= 5:
+                st["dm_replies"][int(parts[1]) - 1] = parts[2].strip()
+                save_cfg()
+                return await fb(e, f"✅ [Acc {acc_id}] DM Reply {parts[1]} updated.")
 
-        if cl in ("stopall", "stop all", "clearall"):
-            stop_nc_task(cid); REPLY_CHATS.discard(cid); MUTE_CHATS.discard(cid); LOCK_CHATS.discard(cid); DEL_NAME_CHATS.discard(cid)
-            PIN_CHATS.discard(cid); PIN_DEL_CHATS.discard(cid); PIN_EXEMPTS.discard(cid)
-            for dic in (T_REPLY, T_MUTE, T_LOCK, T_NC_R, T_NC_M, T_NC_L, T_DELNAME): dic.pop(cid, None)
-            save_cfg(); return await fb(e, "🛑 **All features stopped for this chat.**")
+        # STOPALL (Scoped only to this acc_id)
+        for pfx in ("stopall", "stop all", "clearall"):
+            if cl == pfx or cl.startswith(pfx + " "):
+                tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[len(pfx):])
+                stop_nc_task(st, tcid)
+                st["reply_chats"].discard(tcid)
+                st["mute_chats"].discard(tcid)
+                st["lock_chats"].discard(tcid)
+                st["del_name_chats"].discard(tcid)
+                st["pin_chats"].discard(tcid)
+                st["pin_del_chats"].discard(tcid)
+                st["pin_exempts"].discard(tcid)
+                for key in ("t_reply", "t_mute", "t_lock", "t_nc_r", "t_nc_m", "t_nc_l", "t_delname"):
+                    st[key].pop(tcid, None)
+                save_cfg()
+                return await fb(e, f"🛑 **[Acc {acc_id}] All features stopped{f' in {glabel}' if glabel else ''}.**")
 
-        if cl in ("stopnc", "stop nc", "nc off"): stop_nc_task(cid); return await fb(e, "🛑 NC Stopped.")
-        if cl.startswith("nc") and not cl.startswith(("nc reply", "nc mute", "nc lock", "ncr", "ncm", "ncl")):
+        # STOPNC (Scoped only to this acc_id)
+        for pfx in ("stopnc", "stop nc", "nc off"):
+            if cl == pfx or cl.startswith(pfx + " "):
+                tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[len(pfx):])
+                stop_nc_task(st, tcid)
+                return await fb(e, f"🛑 [Acc {acc_id}] NC Stopped{f' in {glabel}' if glabel else ''}.")
+
+        # NC START (Scoped only to this acc_id)
+        if (cl == "nc" or cl.startswith("nc ")) and not cl.startswith(("nc reply", "nc mute", "nc lock", "ncr", "ncm", "ncl")):
             sub_arg = c[2:].strip()
             if sub_arg.lower() in ("setup", "add"):
-                stop_nc_task(cid); NC_SETUP[cid] = {"names": [], "pid": e.id}
-                return await fb(e, f"📝 **[Auto-NC Setup]** Send 5 names one by one.\n👉 **Send Name 1 of 5:**", d=None)
-            names = [x.strip() for x in sub_arg.split("|")] if "|" in sub_arg else ([sub_arg] if sub_arg else NC_TITLES)
-            start_nc(client, cid, names)
-            return await fb(e, "🚀 **NC Started.**")
+                stop_nc_task(st, cid)
+                st["nc_setup"][cid] = {"names": [], "pid": e.id}
+                return await fb(e, f"📝 **[Acc {acc_id} Auto-NC Setup]** Send 5 names one by one.\n👉 **Send Name 1 of 5:**", d=None)
+            tcid, glabel = cid, None
+            toks = tokenize_args(sub_arg)
+            if toks:
+                maybe_cid, maybe_lbl = await resolve_chat_token(client, st, toks[-1])
+                if maybe_cid and (str(maybe_cid).startswith("-100") or maybe_cid < 0 or any(
+                    d["id"] == maybe_cid and d["is_group"] for d in st["dialog_cache"]["items"]
+                )):
+                    tcid, glabel = maybe_cid, maybe_lbl
+                    sub_arg = sub_arg[:sub_arg.rfind(toks[-1])].strip().rstrip('"').rstrip("'")
+            names = [x.strip() for x in sub_arg.split("|")] if "|" in sub_arg else ([sub_arg] if sub_arg else st["nc_titles"])
+            start_nc(client, st, tcid, names)
+            return await fb(e, f"🚀 **[Acc {acc_id}] NC Started{f' in {glabel}' if glabel else ''}.**")
 
-        if cl == "pinall": PIN_ALL = True; save_cfg(); return await fb(e, "📌 Global Pin ON")
-        if cl == "stop pinall" or cl == "unpinall": PIN_ALL = False; save_cfg(); return await fb(e, "🛑 Global Pin OFF")
-        if cl == "pin except": PIN_EXEMPTS.add(cid); PIN_CHATS.discard(cid); save_cfg(); return await fb(e, "🛡️ Pin Exception ON")
-        if cl == "stop pin except": PIN_EXEMPTS.discard(cid); save_cfg(); return await fb(e, "🛑 Pin Exception OFF")
-        if cl == "pindelall": PIN_DEL_ALL = True; save_cfg(); return await fb(e, "🗑️ Global Pin-Del ON")
-        if cl == "stop pindelall": PIN_DEL_ALL = False; save_cfg(); return await fb(e, "🛑 Global Pin-Del OFF")
-        if cl == "pindel" or cl == "pindel on": PIN_DEL_CHATS.add(cid); save_cfg(); return await fb(e, "✅ Pin-Del ON")
-        if cl == "stop pindel": PIN_DEL_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 Pin-Del OFF")
-        
-        if cl.startswith(("stop pin", "unpin")): return await toggle_pin(client, e, c[8:].strip() if cl.startswith("stop pin") else c[5:].strip(), True)
-        if cl == "pin" or cl == "pin on": return await toggle_pin(client, e, "", False)
-        if cl == "pin off": return await toggle_pin(client, e, "", True)
-        if cl.startswith("pin ") and not cl.startswith(("pinall", "pin except", "pindel")): return await toggle_pin(client, e, c[4:].strip(), False)
+        # PINNING COMMANDS (Scoped only to this acc_id)
+        if cl == "pinall":
+            st["pin_all"] = True; save_cfg(); return await fb(e, f"📌 [Acc {acc_id}] Global Pin ON")
+        if cl in ("stop pinall", "unpinall"):
+            st["pin_all"] = False; save_cfg(); return await fb(e, f"🛑 [Acc {acc_id}] Global Pin OFF")
+        if cl == "pin except" or cl.startswith("pin except "):
+            tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[10:])
+            st["pin_exempts"].add(tcid); st["pin_chats"].discard(tcid); save_cfg()
+            return await fb(e, f"🛡️ [Acc {acc_id}] Pin Exception ON{f' ({glabel})' if glabel else ''}")
+        if cl == "stop pin except" or cl.startswith("stop pin except "):
+            tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[15:])
+            st["pin_exempts"].discard(tcid); save_cfg()
+            return await fb(e, f"🛑 [Acc {acc_id}] Pin Exception OFF{f' ({glabel})' if glabel else ''}")
+        if cl == "pindelall":
+            st["pin_del_all"] = True; save_cfg(); return await fb(e, f"🗑️ [Acc {acc_id}] Global Pin-Del ON")
+        if cl == "stop pindelall":
+            st["pin_del_all"] = False; save_cfg(); return await fb(e, f"🛑 [Acc {acc_id}] Global Pin-Del OFF")
+        if cl in ("pindel", "pindel on") or cl.startswith("pindel "):
+            tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[6:])
+            st["pin_del_chats"].add(tcid); save_cfg()
+            return await fb(e, f"✅ [Acc {acc_id}] Pin-Del ON{f' ({glabel})' if glabel else ''}")
+        if cl == "stop pindel" or cl.startswith("stop pindel "):
+            tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[11:])
+            st["pin_del_chats"].discard(tcid); save_cfg()
+            return await fb(e, f"🛑 [Acc {acc_id}] Pin-Del OFF{f' ({glabel})' if glabel else ''}")
 
-        if cl.startswith("stop target nc reply"): return await toggle_target(client, e, c[20:], T_NC_R, "Target NC Reply", True)
-        if cl.startswith("stop target nc mute"): return await toggle_target(client, e, c[19:], T_NC_M, "Target NC Mute", True)
-        if cl.startswith("stop target nc lock"): return await toggle_target(client, e, c[19:], T_NC_L, "Target NC Lock", True)
-        if cl.startswith("stop target delname"): return await toggle_target(client, e, c[19:], T_DELNAME, "Target DelName", True)
+        if cl.startswith(("stop pin", "unpin")):
+            return await toggle_pin(client, acc_id, e, c[8:].strip() if cl.startswith("stop pin") else c[5:].strip(), True)
+        if cl in ("pin", "pin on"):
+            return await toggle_pin(client, acc_id, e, "", False)
+        if cl == "pin off":
+            return await toggle_pin(client, acc_id, e, "", True)
+        if cl.startswith("pin ") and not cl.startswith(("pinall", "pin except", "pindel")):
+            return await toggle_pin(client, acc_id, e, c[4:].strip(), False)
 
-        if cl.startswith("target nc reply"): return await toggle_target(client, e, c[15:], T_NC_R, "Target NC Reply")
-        if cl.startswith("target nc mute"): return await toggle_target(client, e, c[14:], T_NC_M, "Target NC Mute")
-        if cl.startswith("target nc lock"): return await toggle_target(client, e, c[14:], T_NC_L, "Target NC Lock")
-        if cl.startswith("target delname"): return await toggle_target(client, e, c[14:], T_DELNAME, "Target DelName")
+        # TARGET COMMANDS (Scoped only to this acc_id)
+        target_routes = [
+            ("stop target nc reply", "t_nc_r", "Target NC Reply", True),
+            ("stop target nc mute", "t_nc_m", "Target NC Mute", True),
+            ("stop target nc lock", "t_nc_l", "Target NC Lock", True),
+            ("stop target delname", "t_delname", "Target DelName", True),
+            ("target nc reply", "t_nc_r", "Target NC Reply", False),
+            ("target nc mute", "t_nc_m", "Target NC Mute", False),
+            ("target nc lock", "t_nc_l", "Target NC Lock", False),
+            ("target delname", "t_delname", "Target DelName", False),
+            ("stop target reply", "t_reply", "Target Reply", True),
+            ("stop target mute", "t_mute", "Target Mute", True),
+            ("stop target lock", "t_lock", "Target Lock", True),
+            ("target reply", "t_reply", "Target Reply", False),
+            ("target mute", "t_mute", "Target Mute", False),
+            ("target lock", "t_lock", "Target Lock", False),
+        ]
+        for pfx, dkey, lbl, is_stp in target_routes:
+            if cl == pfx or cl.startswith(pfx + " "):
+                return await toggle_target(client, acc_id, e, c[len(pfx):], dkey, lbl, is_stp)
 
-        if cl == "delname" or cl == "delncmsg": DEL_NAME_CHATS.add(cid); save_cfg(); return await fb(e, "✅ Auto-Del Name ON")
-        if cl == "stop delname": DEL_NAME_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 Auto-Del Name OFF")
+        # CHAT-WIDE TOGGLES (Scoped only to this acc_id)
+        chat_toggles = [
+            ("delname", "del_name_chats", "Auto-Del Name", True),
+            ("delncmsg", "del_name_chats", "Auto-Del Name", True),
+            ("stop delname", "del_name_chats", "Auto-Del Name", False),
+            ("replyall", "reply_chats", "ReplyAll", True),
+            ("stop replyall", "reply_chats", "ReplyAll", False),
+            ("unreplyall", "reply_chats", "ReplyAll", False),
+            ("mutegc", "mute_chats", "MuteGC", True),
+            ("stop mutegc", "mute_chats", "MuteGC", False),
+            ("unmutegc", "mute_chats", "MuteGC", False),
+            ("lockall", "lock_chats", "LockAll", True),
+            ("stop lockall", "lock_chats", "LockAll", False),
+            ("unlockall", "lock_chats", "LockAll", False),
+            ("reply", "reply_chats", "DM Reply", True),
+            ("stop reply", "reply_chats", "DM Reply", False),
+            ("unreply", "reply_chats", "DM Reply", False),
+            ("lock", "lock_chats", "DM Lock", True),
+            ("stop lock", "lock_chats", "DM Lock", False),
+            ("unlock", "lock_chats", "DM Lock", False),
+        ]
+        for pfx, set_key, lbl, enable in chat_toggles:
+            if cl == pfx or cl.startswith(pfx + " "):
+                tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[len(pfx):])
+                if enable:
+                    st[set_key].add(tcid)
+                else:
+                    st[set_key].discard(tcid)
+                save_cfg()
+                return await fb(e, f"{'✅' if enable else '🛑'} [Acc {acc_id}] {lbl} {'ON' if enable else 'OFF'}{f' ({glabel})' if glabel else ''}")
 
-        if cl.startswith("stop target reply"): return await toggle_target(client, e, c[17:], T_REPLY, "Target Reply", True)
-        if cl.startswith("stop target mute"): return await toggle_target(client, e, c[16:], T_MUTE, "Target Mute", True)
-        if cl.startswith("stop target lock"): return await toggle_target(client, e, c[16:], T_LOCK, "Target Lock", True)
-        if cl.startswith("target reply"): return await toggle_target(client, e, c[12:], T_REPLY, "Target Reply")
-        if cl.startswith("target mute"): return await toggle_target(client, e, c[11:], T_MUTE, "Target Mute")
-        if cl.startswith("target lock"): return await toggle_target(client, e, c[11:], T_LOCK, "Target Lock")
+        if cl == "mute" or cl.startswith("mute "):
+            tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[4:])
+            st["mute_chats"].add(tcid); st["unmute_exempts"].discard(tcid); save_cfg()
+            return await fb(e, f"✅ [Acc {acc_id}] DM Mute ON{f' ({glabel})' if glabel else ''}")
+        if cl in ("stop mute", "unmute") or cl.startswith(("stop mute ", "unmute ")):
+            arg_part = c[9:] if cl.startswith("stop mute") else c[6:]
+            tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, arg_part)
+            st["mute_chats"].discard(tcid); st["unmute_exempts"].add(tcid); save_cfg()
+            return await fb(e, f"🛑 [Acc {acc_id}] DM Mute OFF{f' ({glabel})' if glabel else ''}")
+        if cl == "muteall":
+            st["mute_all"] = True; save_cfg(); return await fb(e, f"🔒 [Acc {acc_id}] Mute All DMs ON")
+        if cl == "stop muteall":
+            st["mute_all"] = False; save_cfg(); return await fb(e, f"🔓 [Acc {acc_id}] Mute All DMs OFF")
 
-        if cl == "replyall": REPLY_CHATS.add(cid); save_cfg(); return await fb(e, "✅ ReplyAll ON")
-        if cl == "stop replyall": REPLY_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 ReplyAll OFF")
-        if cl == "mutegc": MUTE_CHATS.add(cid); save_cfg(); return await fb(e, "✅ MuteGC ON")
-        if cl == "stop mutegc": MUTE_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 MuteGC OFF")
-        if cl == "lockall": LOCK_CHATS.add(cid); save_cfg(); return await fb(e, "🛡️ LockAll ON")
-        if cl == "stop lockall": LOCK_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 LockAll OFF")
-
-        if cl == "reply": REPLY_CHATS.add(cid); save_cfg(); return await fb(e, "✅ DM Reply ON")
-        if cl == "stop reply": REPLY_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 DM Reply OFF")
-        if cl == "mute": MUTE_CHATS.add(cid); UNMUTE_EXEMPTS.discard(cid); save_cfg(); return await fb(e, "✅ DM Mute ON")
-        if cl == "stop mute" or cl == "unmute": MUTE_CHATS.discard(cid); UNMUTE_EXEMPTS.add(cid); save_cfg(); return await fb(e, "🛑 DM Mute OFF / Exempted")
-        if cl == "muteall": MUTE_ALL = True; save_cfg(); return await fb(e, "🔒 Mute All DMs ON")
-        if cl == "stop muteall": MUTE_ALL = False; save_cfg(); return await fb(e, "🔓 Mute All DMs OFF")
-        if cl == "lock": LOCK_CHATS.add(cid); save_cfg(); return await fb(e, "🛡️ DM Lock ON")
-        if cl == "stop lock" or cl == "unlock": LOCK_CHATS.discard(cid); save_cfg(); return await fb(e, "🛑 DM Lock OFF")
-
-        if cl == "status": return await fb(e, "⚙️ Chat Status Active", d=None)
+        if cl == "status" or cl.startswith("status "):
+            tcid, glabel = await resolve_target_chat_from_arg(client, st, cid, c[6:])
+            active = []
+            if tcid in st["reply_chats"]: active.append("Reply")
+            if tcid in st["mute_chats"]: active.append("Mute")
+            if tcid in st["lock_chats"]: active.append("Lock")
+            if tcid in st["pin_chats"] or st["pin_all"]: active.append("Pin")
+            if tcid in st["del_name_chats"]: active.append("DelName")
+            if tcid in st["nc_tasks"]: active.append("NC")
+            if st["t_reply"].get(tcid): active.append(f"TReply({len(st['t_reply'][tcid])})")
+            if st["t_mute"].get(tcid): active.append(f"TMute({len(st['t_mute'][tcid])})")
+            if st["t_lock"].get(tcid): active.append(f"TLock({len(st['t_lock'][tcid])})")
+            return await fb(e, f"⚙️ **[Acc {acc_id}] Status{f' ({glabel})' if glabel else ''}:** {', '.join(active) or 'None'}", d=None)
 
     @client.on(events.NewMessage(incoming=True))
     @client.on(events.MessageEdited(incoming=True))
     async def on_incoming(e):
-        if not ACCOUNT_STATES.get(acc_id, False): return
-        cid, sid, my_id = e.chat_id, e.sender_id, MY_IDS.get(acc_id)
-        if cid is None or sid == my_id: return
+        if not ACCOUNT_STATES.get(acc_id, False):
+            return
+        cid, sid = e.chat_id, e.sender_id
+        my_id = MY_IDS.get(acc_id)
+        if cid is None or sid == my_id:
+            return
 
-        # 🔥 SMART EARLY EXIT (SUPER MEMORY SAVER) 🔥
+        # Prevent your own other accounts from triggering auto-replies/deletes on each other
+        if sid and sid in MY_IDS.values():
+            return
+
+        st = get_st(acc_id)
         is_monitored = (
-            cid in T_NC_L or cid in T_NC_M or cid in T_LOCK or cid in LOCK_CHATS or
-            cid in T_MUTE or cid in MUTE_CHATS or cid in T_NC_R or
-            cid in REPLY_CHATS or cid in T_REPLY or cid in DEL_NAME_CHATS or
-            cid in T_DELNAME or (e.is_private and MUTE_ALL) or should_delete_pin_notification(cid) or
-            cid in NC_TASKS
+            cid in st["t_nc_l"] or cid in st["t_nc_m"] or cid in st["t_lock"] or cid in st["lock_chats"] or
+            cid in st["t_mute"] or cid in st["mute_chats"] or cid in st["t_nc_r"] or
+            cid in st["reply_chats"] or cid in st["t_reply"] or cid in st["del_name_chats"] or
+            cid in st["t_delname"] or (e.is_private and st["mute_all"]) or
+            should_delete_pin_notification(st, cid) or cid in st["nc_tasks"]
         )
         if not is_monitored and not is_pin_action(e):
             return
 
-        cache(e)
-
         action = getattr(e, "action", None)
         if action is not None:
             if type(action).__name__ == "MessageActionChatEditTitle":
-                if is_target_user(cid, sid) or cid in DEL_NAME_CHATS:
-                    try: await e.delete()
-                    except: pass
-                    if is_target_user(cid, sid) and (cid in NC_TASKS or cid in T_NC_L or cid in T_NC_M):
-                        asyncio.create_task(execute_title_change(client, cid, NC_TITLES[0] if NC_TITLES else "🔥 ALPHA ZONE 🔥"))
+                if is_target_user(st, cid, sid) or cid in st["del_name_chats"]:
+                    try:
+                        await e.delete()
+                    except Exception:
+                        pass
+                    if is_target_user(st, cid, sid) and (cid in st["nc_tasks"] or cid in st["t_nc_l"] or cid in st["t_nc_m"]):
+                        titles = st["nc_titles"]
+                        asyncio.create_task(execute_title_change(client, st, cid, titles[0] if titles else "🔥 ALPHA ZONE 🔥"))
                     return
-            if is_pin_action(e): await handle_pin_notification(client, acc_id, e); return
+            if is_pin_action(e):
+                await handle_pin_notification(client, acc_id, e)
+                return
 
         should_delete = False
-        if cid in T_NC_L and sid in T_NC_L[cid]: should_delete = True
-        elif cid in T_NC_M and sid in T_NC_M[cid]:
-            should_delete = True; asyncio.create_task(execute_title_change(client, cid, f"🚫 MUTED: User {sid}"))
-        elif cid in T_LOCK and sid in T_LOCK[cid]: should_delete = True
-        elif cid in LOCK_CHATS: should_delete = True
-        elif cid in T_MUTE and sid in T_MUTE[cid]: should_delete = True
-        elif cid in MUTE_CHATS or (e.is_private and MUTE_ALL and cid not in UNMUTE_EXEMPTS): should_delete = True
+        if cid in st["t_nc_l"] and sid in st["t_nc_l"][cid]:
+            should_delete = True
+        elif cid in st["t_nc_m"] and sid in st["t_nc_m"][cid]:
+            should_delete = True
+            asyncio.create_task(execute_title_change(client, st, cid, f"🚫 MUTED: User {sid}"))
+        elif cid in st["t_lock"] and sid in st["t_lock"][cid]:
+            should_delete = True
+        elif cid in st["lock_chats"]:
+            should_delete = True
+        elif cid in st["t_mute"] and sid in st["t_mute"][cid]:
+            should_delete = True
+        elif cid in st["mute_chats"] or (e.is_private and st["mute_all"] and cid not in st["unmute_exempts"]):
+            should_delete = True
 
         if should_delete:
-            if (cid, e.id) not in RECENT_DELETED:
-                RECENT_DELETED.add((cid, e.id))
-                try: await e.delete()
-                except: pass
+            if (cid, e.id) not in st["recent_deleted"]:
+                st["recent_deleted"].add((cid, e.id))
+                try:
+                    await e.delete()
+                except Exception:
+                    pass
             return
 
-        if cid in T_NC_R and sid in T_NC_R[cid]:
+        if cid in st["t_nc_r"] and sid in st["t_nc_r"][cid]:
             try:
-                mention, idx = await get_mention(e), GC_INDEX.get(cid, 0)
-                GC_INDEX[cid] = (idx + 1) % len(GC_REPLIES)
-                await e.reply(f"🎯 {mention} {GC_REPLIES[idx % len(GC_REPLIES)]}", parse_mode="md")
-                asyncio.create_task(execute_title_change(client, cid, f"🎯 TARGET ALERT: {sid}"))
-            except: pass
+                mention = await get_mention(st, e)
+                gc_msgs = st["gc_replies"]
+                idx = st["gc_index"].get(cid, 0)
+                st["gc_index"][cid] = (idx + 1) % len(gc_msgs)
+                await e.reply(f"🎯 {mention} {gc_msgs[idx % len(gc_msgs)]}", parse_mode="md")
+                asyncio.create_task(execute_title_change(client, st, cid, f"🎯 TARGET ALERT: {sid}"))
+            except Exception:
+                pass
 
-        if cid in REPLY_CHATS or (cid in T_REPLY and sid in T_REPLY[cid]):
+        if cid in st["reply_chats"] or (cid in st["t_reply"] and sid in st["t_reply"][cid]):
             now = time.time()
-            if now - LAST_REP.get((cid, sid), 0) < COOLDOWN: return
-            LAST_REP[(cid, sid)] = now
+            if now - st["last_rep"].get((cid, sid), 0) < COOLDOWN:
+                return
+            st["last_rep"][(cid, sid)] = now
             try:
-                mention, idx = await get_mention(e), (DM_INDEX.get(cid, 0) if e.is_private else GC_INDEX.get(cid, 0))
-                msgs = DM_REPLIES if e.is_private else GC_REPLIES
-                if e.is_private: DM_INDEX[cid] = (idx + 1) % len(msgs)
-                else: GC_INDEX[cid] = (idx + 1) % len(msgs)
+                mention = await get_mention(st, e)
+                msgs = st["dm_replies"] if e.is_private else st["gc_replies"]
+                idx_dict = st["dm_index"] if e.is_private else st["gc_index"]
+                idx = idx_dict.get(cid, 0)
+                idx_dict[cid] = (idx + 1) % len(msgs)
                 await e.reply(f"{mention} {msgs[idx % len(msgs)]}", parse_mode="md")
-            except: pass
+            except Exception:
+                pass
 
+# =====================================================================
+# MAIN BOOTSTRAP (CLOUD RESTORE FIRST, THEN START ACCOUNTS)
+# =====================================================================
 async def main():
     global STOP_EVENT, RENDER_SERVER, CACHE_CLEAN_TASK
-    STOP_EVENT = asyncio.Event(); load_cfg(); clear_cache_files()
-    CACHE_CLEAN_TASK = asyncio.create_task(auto_cache_cleaner_worker(300))
+    STOP_EVENT = asyncio.Event()
+    load_cfg()
+    clear_cache_files()
+    CACHE_CLEAN_TASK = asyncio.create_task(auto_cache_cleaner_worker(180))
     RENDER_SERVER = await start_render_health_server()
-    if not any(ACCOUNT_STATES.values()): ACCOUNT_STATES[1] = True; save_cfg()
+
+    # Connect Account 1 first to restore latest cloud settings from Saved Messages
+    ok1, _ = await start_account(1)
+    if ok1 and 1 in CLIENTS:
+        restored = await restore_cfg_from_cloud(CLIENTS[1])
+        if restored and not ACCOUNT_STATES.get(1, True):
+            await stop_account(1)
+
+    if not any(ACCOUNT_STATES.values()):
+        ACCOUNT_STATES[1] = True
+        save_cfg()
+
     for aid in [a["id"] for a in ACCOUNTS_CONFIG]:
-        if ACCOUNT_STATES.get(aid, False): await start_account(aid); await asyncio.sleep(1.0)
-    print("\n🚀 USERBOT RUNNING (Optimized for Render)\n")
+        if ACCOUNT_STATES.get(aid, False):
+            await start_account(aid)
+            await asyncio.sleep(1.0)
+
+    print("\n🚀 USERBOT RUNNING (Per-Account Isolated + Cloud Sync + Zero-Leak Mode)\n")
     await STOP_EVENT.wait()
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop(); asyncio.set_event_loop(loop)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     for sig in (signal.SIGINT, signal.SIGTERM):
-        try: loop.add_signal_handler(sig, lambda: STOP_EVENT.set() if STOP_EVENT else None)
-        except: pass
-    try: loop.run_until_complete(main())
-    except KeyboardInterrupt: pass
+        try:
+            loop.add_signal_handler(sig, lambda: STOP_EVENT.set() if STOP_EVENT else None)
+        except Exception:
+            pass
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
     finally:
-        save_cfg(); clear_cache_files()
+        save_cfg()
+        clear_cache_files()
         for cl in list(CLIENTS.values()):
-            if cl.is_connected(): loop.run_until_complete(cl.disconnect())
+            if cl.is_connected():
+                loop.run_until_complete(cl.disconnect())
