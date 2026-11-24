@@ -1384,7 +1384,7 @@ def register_handlers(client, acc_id):
                 msgs = st["dm_replies"] if e.is_private else st["gc_replies"]
                 idx_dict = st["dm_index"] if e.is_private else st["gc_index"]
                 idx = idx_dict.get(cid, 0)
-                idx_dict[cid] = (idx + 1) % len(messages)
+                idx_dict[cid] = (idx + 1) % len(msgs)
                 await e.reply(f"{mention} {msgs[idx % len(msgs)]}", parse_mode="md")
             except Exception:
                 pass
@@ -1397,4 +1397,44 @@ async def main():
     STOP_EVENT = asyncio.Event()
     load_cfg()
     clear_cache_files()
-    CACHE
+    CACHE_CLEAN_TASK = asyncio.create_task(auto_cache_cleaner_worker(180))
+    RENDER_SERVER = await start_render_health_server()
+
+    # Connect Account 1 first to restore latest cloud settings from Saved Messages
+    ok1, _ = await start_account(1)
+    if ok1 and 1 in CLIENTS:
+        restored = await restore_cfg_from_cloud(CLIENTS[1])
+        if restored and not ACCOUNT_STATES.get(1, True):
+            await stop_account(1)
+
+    if not any(ACCOUNT_STATES.values()):
+        ACCOUNT_STATES[1] = True
+        save_cfg()
+
+    for aid in [a["id"] for a in ACCOUNTS_CONFIG]:
+        if ACCOUNT_STATES.get(aid, False):
+            await start_account(aid)
+            await asyncio.sleep(1.0)
+
+    UNJOINED_POLL_TASK = asyncio.create_task(unjoined_public_reaction_worker())
+    print("\n🚀 USERBOT RUNNING (Per-Account Isolated + Unjoined React + Cloud Sync + Zero-Leak)\n")
+    await STOP_EVENT.wait()
+
+if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, lambda: STOP_EVENT.set() if STOP_EVENT else None)
+        except Exception:
+            pass
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        save_cfg()
+        clear_cache_files()
+        for cl in list(CLIENTS.values()):
+            if cl.is_connected():
+                loop.run_until_complete(cl.disconnect())
