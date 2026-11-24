@@ -84,7 +84,7 @@ for d_acc in DEFAULT_ACCOUNTS:
 
 ACCOUNTS_BY_ID = {acc["id"]: acc for acc in ACCOUNTS_CONFIG}
 FILE = "settings.json"
-BACKUP_TAG = "#USERBOT_CFG_BACKUP_V2"
+BACKUP_TAG = "#USERBOT_CFG_BACKUP_V3"
 
 PIN_REACTION = "🔥"
 DEFAULT_NC_TITLES = ["🔥 ALPHA ZONE 🔥", "⚡ THUNDER REIGN ⚡", "👑 APEX EMPIRE 👑", "💎 NITRO KINGS 💎", "🚀 SUPREME RULE 🚀"]
@@ -103,6 +103,7 @@ STOP_EVENT = None
 RENDER_SERVER = None
 CACHE_CLEAN_TASK = None
 CLOUD_SYNC_TASK = None
+UNJOINED_POLL_TASK = None
 BACKUP_MSG_ID = None
 
 # =====================================================================
@@ -122,6 +123,10 @@ def create_empty_acc_state():
         "pin_del_all": False,
         "mute_all": False,
         "pin_reaction": PIN_REACTION,
+        "auto_reaction": "🔥",
+        "react_chats": set(),       # Chats where ALL posts/messages get reacted
+        "t_react": {},            # {chat_id: set(user_ids)} target reactions
+        "unjoined_refs": {},      # {str(chat_id): "@username"} for unjoined public polling
         "gc_replies": list(DEFAULT_GC_REPLIES),
         "dm_replies": list(DEFAULT_DM_REPLIES),
         "nc_titles": list(DEFAULT_NC_TITLES),
@@ -138,6 +143,8 @@ def create_empty_acc_state():
         "gc_index": {},
         "dm_index": {},
         "last_rep": {},
+        "reacted_msgs": set(),
+        "poll_last_id": {},
         "pin_processed": set(),
         "pin_notif_reacted": set(),
         "pin_notif_deleted": set(),
@@ -159,12 +166,19 @@ def get_st(acc_id):
 # =====================================================================
 HELP = """📋 **USERBOT ALL COMMANDS & CONTROLS**
 *(Har account ki settings 100% alag hain — jis account se command doge sirf wahi chalega!)*
-*(Prefix `*` ya `/` dono kaam karte hain. Kisi bhi chat se `@gc_name` ya `"GC Name"` likhkar remote control karein!)*
+*(Prefix `*` ya `/` dono kaam karte hain. Kisi bhi chat se `@gc_name`, `"GC Name"`, ya `https://t.me/...` likhkar remote control karein!)*
 
 📱 **5-ACCOUNT MANAGEMENT:**
 - `*acc <1-5> on` / `off` ➔ Turn ON/OFF specific account
 - `*acc status` / `*accs` ➔ View status of all 5 accounts
 - `*acc all on` / `off` ➔ Turn ON/OFF all accounts
+
+🔥 **AUTO-REACTION (JOINED + UNJOINED PUBLIC CHANNELS/GROUPS):**
+- `*target react <@user/ID/Name> [@gc/channel/link]` ➔ Set reaction on users in GC/Channel
+- `*stop target react [@user] [@gc/channel/link]` ➔ Stop target react on user(s)
+- `*react all <@gc1 @channel2 t.me/link3>` ➔ React to ALL posts/msgs in target chats (even unjoined public)
+- `*stop all react [@gc/channel/link]` ➔ Stop all reaction commands
+- `*setreact <emoji>` ➔ Change reaction emoji (default 🔥)
 
 🧹 **CACHE & CLOUD BACKUP:**
 - `*clearcache` / `*cache` ➔ Immediately trim RAM & clear cache
@@ -241,6 +255,8 @@ def clear_cache_files():
                 st["entity_cache"].clear()
             if len(st["recent_deleted"]) > 250:
                 st["recent_deleted"].clear()
+            if len(st["reacted_msgs"]) > 400:
+                st["reacted_msgs"].clear()
             if len(st["pin_processed"]) > 250:
                 st["pin_processed"].clear()
             if len(st["pin_notif_reacted"]) > 250:
@@ -277,7 +293,8 @@ def is_target_user(st, cid, uid):
         (cid in st["t_nc_r"] and uid in st["t_nc_r"][cid]) or
         (cid in st["t_lock"] and uid in st["t_lock"][cid]) or
         (cid in st["t_mute"] and uid in st["t_mute"][cid]) or
-        (cid in st["t_reply"] and uid in st["t_reply"][cid])
+        (cid in st["t_reply"] and uid in st["t_reply"][cid]) or
+        (cid in st["t_react"] and uid in st["t_react"][cid])
     )
 
 # =====================================================================
@@ -332,6 +349,10 @@ def serialize_single_acc(st):
         "pin_del_all": st["pin_del_all"],
         "pin_exempt": list(st["pin_exempts"]),
         "pin_reaction": st["pin_reaction"],
+        "auto_reaction": st["auto_reaction"],
+        "react_chats": list(st["react_chats"]),
+        "treact": {str(k): list(v) for k, v in st["t_react"].items() if v},
+        "unjoined_refs": st["unjoined_refs"],
         "gc_replies": st["gc_replies"],
         "dm_replies": st["dm_replies"],
         "nc_titles": st["nc_titles"],
@@ -359,6 +380,11 @@ def deserialize_single_acc(st, d):
     st["pin_del_all"] = bool(d.get("pin_del_all", False))
     st["pin_exempts"].clear(); st["pin_exempts"].update(d.get("pin_exempt", []))
     st["pin_reaction"] = str(d.get("pin_reaction", "🔥"))
+    st["auto_reaction"] = str(d.get("auto_reaction", "🔥"))
+    st["react_chats"].clear(); st["react_chats"].update(d.get("react_chats", []))
+    st["unjoined_refs"].clear()
+    if isinstance(d.get("unjoined_refs"), dict):
+        st["unjoined_refs"].update(d["unjoined_refs"])
     if len(d.get("gc_replies", [])) >= 5:
         st["gc_replies"][:] = d["gc_replies"][:5]
     if len(d.get("dm_replies", [])) >= 5:
@@ -367,7 +393,8 @@ def deserialize_single_acc(st, d):
         st["nc_titles"][:] = d["nc_titles"][:10]
     for target_key, json_key in [
         ("t_reply", "tr"), ("t_mute", "tm"), ("t_lock", "tl"),
-        ("t_nc_r", "ncr"), ("t_nc_m", "ncm"), ("t_nc_l", "ncl"), ("t_delname", "tdel")
+        ("t_nc_r", "ncr"), ("t_nc_m", "ncm"), ("t_nc_l", "ncl"),
+        ("t_delname", "tdel"), ("t_react", "treact")
     ]:
         st[target_key].clear()
         for k, v in d.get(json_key, {}).items():
@@ -375,7 +402,7 @@ def deserialize_single_acc(st, d):
 
 def build_cfg_dict():
     return {
-        "v": 2,
+        "v": 3,
         "accounts": {str(k): bool(v) for k, v in ACCOUNT_STATES.items()},
         "per_acc": {str(aid): serialize_single_acc(get_st(aid)) for aid in ACCOUNTS_BY_ID}
     }
@@ -391,12 +418,11 @@ def apply_cfg_dict(d):
             if str(aid) in d["per_acc"]:
                 deserialize_single_acc(get_st(aid), d["per_acc"][str(aid)])
     else:
-        # Backward compatibility if migrating from V1 format
         deserialize_single_acc(get_st(1), d)
 
 async def _push_cloud_backup():
     global BACKUP_MSG_ID
-    await asyncio.sleep(2.0)  # Debounce rapid command saves
+    await asyncio.sleep(2.0)
     primary_client = CLIENTS.get(1)
     if not primary_client or not primary_client.is_connected():
         for cl in CLIENTS.values():
@@ -471,8 +497,20 @@ async def restore_cfg_from_cloud(client):
     return False
 
 # =====================================================================
-# REMOTE CHAT & USER RESOLVER (PER-ACCOUNT DIALOG & ENTITY ISOLATION)
+# REMOTE CHAT & USER RESOLVER (SUPPORTS LINKS, USERNAMES, IDs, NAMES)
 # =====================================================================
+def extract_tg_username_or_ref(tok):
+    if not tok:
+        return ""
+    clean = tok.strip().strip('"').strip("'")
+    # Handle https://t.me/username or t.me/username/123
+    m = re.match(r"^(?:https?://)?(?:www\.)?(?:t\.me|telegram\.me)/([a-zA-Z0-9_]{3,})(?:/.*)?$", clean, re.IGNORECASE)
+    if m:
+        slug = m.group(1)
+        if slug.lower() not in ("c", "joinchat", "s"):
+            return slug
+    return clean[1:] if clean.startswith("@") else clean
+
 async def _refresh_dialogs_if_needed(client, st):
     now = time.time()
     dcache = st["dialog_cache"]
@@ -498,11 +536,12 @@ async def _refresh_dialogs_if_needed(client, st):
         pass
     return dcache["items"]
 
-async def resolve_chat_token(client, st, tok):
+async def resolve_chat_token(client, st, tok, record_unjoined=True):
     if not tok:
         return None, None
-    clean = tok.strip().strip('"').strip("'")
-    clean_no_at = clean[1:] if clean.startswith("@") else clean
+    clean_no_at = extract_tg_username_or_ref(tok)
+    if not clean_no_at:
+        return None, None
 
     if clean_no_at.lstrip("-").isdigit():
         num_id = int(clean_no_at)
@@ -516,6 +555,8 @@ async def resolve_chat_token(client, st, tok):
     try:
         ent = await client.get_entity(clean_no_at)
         cid = await client.get_peer_id(ent)
+        if record_unjoined and getattr(ent, "left", False) and getattr(ent, "username", None):
+            st["unjoined_refs"][str(cid)] = f"@{ent.username}"
         return cid, getattr(ent, "title", None) or getattr(ent, "first_name", str(cid))
     except Exception:
         pass
@@ -564,7 +605,9 @@ class TargetUser:
         self.title = None
 
 async def resolve_single_user(client, st, tok, chat_hint=None):
-    clean = tok.lstrip("@").strip()
+    clean = extract_tg_username_or_ref(tok)
+    if not clean:
+        return None
     if clean.lstrip("-").isdigit():
         uid = int(clean)
         try:
@@ -611,9 +654,12 @@ async def parse_user_and_gc_targets(client, st, e, arg_str, default_cid):
 
     if len(tokens) >= 2 or (len(tokens) == 1 and users):
         maybe_gc_id, maybe_gc_name = await resolve_chat_token(client, st, tokens[-1])
-        if maybe_gc_id is not None and (str(maybe_gc_id).startswith("-100") or maybe_gc_id < 0 or any(
-            d["id"] == maybe_gc_id and d["is_group"] for d in st["dialog_cache"]["items"]
-        )):
+        if maybe_gc_id is not None and (
+            str(maybe_gc_id).startswith("-100")
+            or maybe_gc_id < 0
+            or str(maybe_gc_id) in st["unjoined_refs"]
+            or any(d["id"] == maybe_gc_id and d["is_group"] for d in st["dialog_cache"]["items"])
+        ):
             target_cid = maybe_gc_id
             target_gc_label = maybe_gc_name
             tokens = tokens[:-1]
@@ -624,6 +670,60 @@ async def parse_user_and_gc_targets(client, st, e, arg_str, default_cid):
             users.append(u_ent)
 
     return target_cid, target_gc_label, users
+
+# =====================================================================
+# AUTO-REACTION ENGINE (JOINED EVENTS + UNJOINED PUBLIC POLLER)
+# =====================================================================
+async def send_auto_reaction(client, st, cid, mid):
+    key = (cid, mid)
+    if key in st["reacted_msgs"]:
+        return
+    st["reacted_msgs"].add(key)
+    try:
+        await client.send_reaction(cid, mid, st["auto_reaction"])
+    except Exception:
+        pass
+
+async def unjoined_public_reaction_worker():
+    """Polls unjoined public channels/groups every 3.5s so reactions work without joining."""
+    try:
+        while True:
+            await asyncio.sleep(3.5)
+            for aid, cl in list(CLIENTS.items()):
+                if not ACCOUNT_STATES.get(aid, False) or not cl or not cl.is_connected():
+                    continue
+                st = get_st(aid)
+                active_cids = set(st["react_chats"]) | {k for k, v in st["t_react"].items() if v}
+                for cid in active_cids:
+                    ref = st["unjoined_refs"].get(str(cid))
+                    if not ref:
+                        continue
+                    try:
+                        msgs = await cl.get_messages(ref, limit=5)
+                        if not msgs:
+                            continue
+                        last_seen = st["poll_last_id"].get(cid, 0)
+                        newest_id = max(m.id for m in msgs if getattr(m, "id", None))
+                        if last_seen == 0:
+                            # On first check, react to latest post and mark baseline
+                            st["poll_last_id"][cid] = newest_id
+                            latest_m = msgs[0]
+                            sid = getattr(latest_m, "sender_id", None)
+                            if cid in st["react_chats"] or (cid in st["t_react"] and sid in st["t_react"][cid]):
+                                await send_auto_reaction(cl, st, cid, latest_m.id)
+                            continue
+                        for m in reversed(msgs):
+                            if not getattr(m, "id", None) or m.id <= last_seen:
+                                continue
+                            sid = getattr(m, "sender_id", None)
+                            if cid in st["react_chats"] or (cid in st["t_react"] and sid in st["t_react"][cid]):
+                                await send_auto_reaction(cl, st, cid, m.id)
+                        if newest_id > last_seen:
+                            st["poll_last_id"][cid] = newest_id
+                    except Exception:
+                        pass
+    except asyncio.CancelledError:
+        pass
 
 # =====================================================================
 # HELPERS & UI FEEDBACK
@@ -694,7 +794,7 @@ async def toggle_target(client, acc_id, e, arg, dict_key, label, is_stop=False):
             msg = f"ℹ️ {acc_tag}No active {label}{loc_tag}."
     else:
         if not t:
-            return await fb(e, "⚠️ **Specify @username, ID, or Profile Name (optional `@gc_name`).**")
+            return await fb(e, "⚠️ **Specify @username, ID, or Profile Name (optional `@gc/channel/link`).**")
         dic.setdefault(cid, set()).update(x.id for x in t)
         msg = f"🎯 **{acc_tag}{label} ON**{loc_tag}: " + ", ".join(uname(x) for x in t)
     save_cfg()
@@ -893,7 +993,6 @@ def register_handlers(client, acc_id):
     @client.on(events.NewMessage(outgoing=True))
     @client.on(events.MessageEdited(outgoing=True))
     async def on_cmd(e):
-        # Ignore messages relayed from another owned account if somehow echoed
         if getattr(e, "sender_id", None) and e.sender_id != MY_IDS.get(acc_id):
             return
 
@@ -976,6 +1075,61 @@ def register_handlers(client, acc_id):
                 save_cfg()
                 return await fb(e, f"✅ [Acc {acc_id}] DM Reply {parts[1]} updated.")
 
+        # =================================================================
+        # REACTION COMMANDS (*target react, *stop target react, *react all, *stop all react)
+        # =================================================================
+        if cl.startswith("setreact "):
+            emoji = c[9:].strip()
+            if emoji:
+                st["auto_reaction"] = emoji
+                save_cfg()
+                return await fb(e, f"🔥 **[Acc {acc_id}] Reaction emoji set to:** {emoji}")
+
+        if cl == "stop target react" or cl.startswith("stop target react "):
+            return await toggle_target(client, acc_id, e, c[17:], "t_react", "Target React", True)
+
+        if cl == "target react" or cl.startswith("target react "):
+            return await toggle_target(client, acc_id, e, c[12:], "t_react", "Target React", False)
+
+        if cl in ("stop all react", "stop react all") or cl.startswith(("stop all react ", "stop react all ")):
+            arg_part = c[14:] if cl.startswith("stop all react") else c[14:]
+            toks = tokenize_args(arg_part)
+            if not toks:
+                st["react_chats"].clear()
+                st["t_react"].clear()
+                st["unjoined_refs"].clear()
+                st["poll_last_id"].clear()
+                save_cfg()
+                return await fb(e, f"🛑 **[Acc {acc_id}] All reaction commands stopped globally.**")
+            stopped_names = []
+            for tok in toks:
+                tcid, glabel = await resolve_chat_token(client, st, tok, record_unjoined=False)
+                if tcid is not None:
+                    st["react_chats"].discard(tcid)
+                    st["t_react"].pop(tcid, None)
+                    st["unjoined_refs"].pop(str(tcid), None)
+                    st["poll_last_id"].pop(tcid, None)
+                    stopped_names.append(glabel or str(tcid))
+            save_cfg()
+            return await fb(e, f"🛑 **[Acc {acc_id}] Reactions stopped for:** {', '.join(stopped_names) or 'Target'}")
+
+        if cl == "react all" or cl.startswith("react all "):
+            toks = tokenize_args(c[9:])
+            if not toks:
+                st["react_chats"].add(cid)
+                save_cfg()
+                return await fb(e, f"🔥 **[Acc {acc_id}] React All ON** ({st['auto_reaction']}) in current chat.")
+            added_names = []
+            for tok in toks:
+                tcid, glabel = await resolve_chat_token(client, st, tok, record_unjoined=True)
+                if tcid is not None:
+                    st["react_chats"].add(tcid)
+                    added_names.append(glabel or str(tcid))
+            save_cfg()
+            if not added_names:
+                return await fb(e, "⚠️ **Could not resolve target group/channel link or username.**")
+            return await fb(e, f"🔥 **[Acc {acc_id}] React All ON** ({st['auto_reaction']}) for: {', '.join(added_names)}")
+
         # STOPALL (Scoped only to this acc_id)
         for pfx in ("stopall", "stop all", "clearall"):
             if cl == pfx or cl.startswith(pfx + " "):
@@ -988,7 +1142,9 @@ def register_handlers(client, acc_id):
                 st["pin_chats"].discard(tcid)
                 st["pin_del_chats"].discard(tcid)
                 st["pin_exempts"].discard(tcid)
-                for key in ("t_reply", "t_mute", "t_lock", "t_nc_r", "t_nc_m", "t_nc_l", "t_delname"):
+                st["react_chats"].discard(tcid)
+                st["unjoined_refs"].pop(str(tcid), None)
+                for key in ("t_reply", "t_mute", "t_lock", "t_nc_r", "t_nc_m", "t_nc_l", "t_delname", "t_react"):
                     st[key].pop(tcid, None)
                 save_cfg()
                 return await fb(e, f"🛑 **[Acc {acc_id}] All features stopped{f' in {glabel}' if glabel else ''}.**")
@@ -1130,6 +1286,8 @@ def register_handlers(client, acc_id):
             if tcid in st["pin_chats"] or st["pin_all"]: active.append("Pin")
             if tcid in st["del_name_chats"]: active.append("DelName")
             if tcid in st["nc_tasks"]: active.append("NC")
+            if tcid in st["react_chats"]: active.append(f"ReactAll({st['auto_reaction']})")
+            if st["t_react"].get(tcid): active.append(f"TReact({len(st['t_react'][tcid])})")
             if st["t_reply"].get(tcid): active.append(f"TReply({len(st['t_reply'][tcid])})")
             if st["t_mute"].get(tcid): active.append(f"TMute({len(st['t_mute'][tcid])})")
             if st["t_lock"].get(tcid): active.append(f"TLock({len(st['t_lock'][tcid])})")
@@ -1145,17 +1303,14 @@ def register_handlers(client, acc_id):
         if cid is None or sid == my_id:
             return
 
-        # Prevent your own other accounts from triggering auto-replies/deletes on each other
-        if sid and sid in MY_IDS.values():
-            return
-
         st = get_st(acc_id)
         is_monitored = (
             cid in st["t_nc_l"] or cid in st["t_nc_m"] or cid in st["t_lock"] or cid in st["lock_chats"] or
             cid in st["t_mute"] or cid in st["mute_chats"] or cid in st["t_nc_r"] or
             cid in st["reply_chats"] or cid in st["t_reply"] or cid in st["del_name_chats"] or
             cid in st["t_delname"] or (e.is_private and st["mute_all"]) or
-            should_delete_pin_notification(st, cid) or cid in st["nc_tasks"]
+            should_delete_pin_notification(st, cid) or cid in st["nc_tasks"] or
+            cid in st["react_chats"] or cid in st["t_react"]
         )
         if not is_monitored and not is_pin_action(e):
             return
@@ -1200,6 +1355,14 @@ def register_handlers(client, acc_id):
                     pass
             return
 
+        # Auto-Reaction (for joined groups/channels & target users)
+        if cid in st["react_chats"] or (cid in st["t_react"] and sid in st["t_react"][cid]):
+            asyncio.create_task(send_auto_reaction(client, st, cid, e.id))
+
+        # Prevent your own other accounts from triggering auto-replies on each other
+        if sid and sid in MY_IDS.values():
+            return
+
         if cid in st["t_nc_r"] and sid in st["t_nc_r"][cid]:
             try:
                 mention = await get_mention(st, e)
@@ -1221,7 +1384,7 @@ def register_handlers(client, acc_id):
                 msgs = st["dm_replies"] if e.is_private else st["gc_replies"]
                 idx_dict = st["dm_index"] if e.is_private else st["gc_index"]
                 idx = idx_dict.get(cid, 0)
-                idx_dict[cid] = (idx + 1) % len(msgs)
+                idx_dict[cid] = (idx + 1) % len(messages)
                 await e.reply(f"{mention} {msgs[idx % len(msgs)]}", parse_mode="md")
             except Exception:
                 pass
@@ -1230,47 +1393,8 @@ def register_handlers(client, acc_id):
 # MAIN BOOTSTRAP (CLOUD RESTORE FIRST, THEN START ACCOUNTS)
 # =====================================================================
 async def main():
-    global STOP_EVENT, RENDER_SERVER, CACHE_CLEAN_TASK
+    global STOP_EVENT, RENDER_SERVER, CACHE_CLEAN_TASK, UNJOINED_POLL_TASK
     STOP_EVENT = asyncio.Event()
     load_cfg()
     clear_cache_files()
-    CACHE_CLEAN_TASK = asyncio.create_task(auto_cache_cleaner_worker(180))
-    RENDER_SERVER = await start_render_health_server()
-
-    # Connect Account 1 first to restore latest cloud settings from Saved Messages
-    ok1, _ = await start_account(1)
-    if ok1 and 1 in CLIENTS:
-        restored = await restore_cfg_from_cloud(CLIENTS[1])
-        if restored and not ACCOUNT_STATES.get(1, True):
-            await stop_account(1)
-
-    if not any(ACCOUNT_STATES.values()):
-        ACCOUNT_STATES[1] = True
-        save_cfg()
-
-    for aid in [a["id"] for a in ACCOUNTS_CONFIG]:
-        if ACCOUNT_STATES.get(aid, False):
-            await start_account(aid)
-            await asyncio.sleep(1.0)
-
-    print("\n🚀 USERBOT RUNNING (Per-Account Isolated + Cloud Sync + Zero-Leak Mode)\n")
-    await STOP_EVENT.wait()
-
-if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(sig, lambda: STOP_EVENT.set() if STOP_EVENT else None)
-        except Exception:
-            pass
-    try:
-        loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        pass
-    finally:
-        save_cfg()
-        clear_cache_files()
-        for cl in list(CLIENTS.values()):
-            if cl.is_connected():
-                loop.run_until_complete(cl.disconnect())
+    CACHE
