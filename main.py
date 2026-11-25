@@ -44,7 +44,7 @@ DEFAULT_ACCOUNTS = [
         "api_id": 33272640,
         "api_hash": "bb1df63726fabb470b0e3f7262511a9b",
         "phone": "+916306499318",
-        "session": "1BVtsOJMBu7MahlPiCTe_vUcNebguVTyThz38edRlhVg6GNYYk-UAsceo8WyRkiYtL3KSbQZPyzO2lxl86XzRyn0FlQGjzvG8D4YBxQ8UjmJOT7mwjcCmo1MWD9KLC1Cd0eS0vPV9bwz5T2pbhNxxwlG0bjVaaH5wBFxcmULNMuQOskkhkTFTANtpV5wMHleNE3Fx8L0cbNhI5LUQEj891Ic7yk_ZSkVXuKwTsbHpMfFf-gxQL9GwUuvP9sw-5y6kDB-OiZfw0vvxcq7uNFrEiaAjykUf2vWv2N3MHm-gb-RfctAU7p3Ih8o7uK4P2EbQEPSdIL8aL0COX9NyurtRrEzQBcNmHho="
+        "session": "1BVtsOJcBu17g7yxmN3Pgny33Jwdc1dLAoQOeU_lziXEU6jBGIwlSwVph6_lPmOXPTi-9K3qA6HaSiIeiekW0zQ37zUPAGl9hI1yTTZ0mnyv0npZTaygrOunNtBZ7XgXFunqVbJfbepABApnJMdSg4J7loF33A9ZPQMbCohaBjC30ewWHDd01mA7SpdhD69Jcir3NP8mDMU89TJ_MaOQ2rTWnX7b9d5IwSivIa_zMopujOY6bAPUIJAvIi3hkJJY-yHLfEtj97OWq6dh23uZGVSOKBmeiJjJ6bWAYN9kHGs4RDIY3OuA-gjyHsSrWHlyBm6EvffP5uuqfbjHtQiEFOtaCVwWBXg0="
     },
     {
         "id": 4,
